@@ -15,14 +15,22 @@
  * limitations under the License.
  */
 
-#include "mbed.h"
-#include "rtos.h"
-#include "mbed_stats.h"
-#include "cmsis_os2.h"
 #include "greentea-client/test_env.h"
 #include "greentea-client/greentea_metrics.h"
-#include "SingletonPtr.h"
-#include "CircularBuffer.h"
+#include "platform/mbed_stats.h"
+#include <stdint.h>
+
+#if defined(MBED_STACK_STATS_ENABLED) && MBED_STACK_STATS_ENABLED && defined(MBED_CONF_RTOS_PRESENT)
+
+#include "rtos/Mutex.h"
+#include "rtos/Thread.h"
+#include "rtos/Kernel.h"
+#include "mbed_stats.h"
+#include "cmsis_os2.h"
+#include "platform/SingletonPtr.h"
+#include "platform/CircularBuffer.h"
+using namespace mbed;
+using namespace rtos;
 
 #define THREAD_BUF_COUNT    16
 
@@ -32,7 +40,6 @@ typedef struct {
     uint32_t max_stack;
 } thread_info_t;
 
-#if defined(MBED_STACK_STATS_ENABLED) && MBED_STACK_STATS_ENABLED
 // Mutex to protect "buf"
 static SingletonPtr<Mutex> mutex;
 static char buf[128];
@@ -43,8 +50,10 @@ static SingletonPtr<CircularBuffer<thread_info_t, THREAD_BUF_COUNT> > queue;
 static void send_CPU_info(void);
 #endif
 
+#if defined(MBED_HEAP_STATS_ENABLED ) && MBED_HEAP_STATS_ENABLED
 static void send_heap_info(void);
-#if defined(MBED_STACK_STATS_ENABLED) && MBED_STACK_STATS_ENABLED
+#endif
+#if defined(MBED_STACK_STATS_ENABLED) && MBED_STACK_STATS_ENABLED && defined(MBED_CONF_RTOS_PRESENT)
 static void send_stack_info(void);
 static void on_thread_terminate(osThreadId_t id);
 static void enqeue_thread_info(osThreadId_t id);
@@ -57,17 +66,19 @@ static uint32_t print_dec(char *buf, uint32_t value);
 
 void greentea_metrics_setup()
 {
-#if defined(MBED_STACK_STATS_ENABLED) && MBED_STACK_STATS_ENABLED
-    Thread::attach_terminate_hook(on_thread_terminate);
+#if defined(MBED_STACK_STATS_ENABLED) && MBED_STACK_STATS_ENABLED && defined(MBED_CONF_RTOS_PRESENT)
+    Kernel::attach_thread_terminate_hook(on_thread_terminate);
 #endif
 }
 
 void greentea_metrics_report()
 {
+#if defined(MBED_HEAP_STATS_ENABLED ) && MBED_HEAP_STATS_ENABLED
     send_heap_info();
-#if defined(MBED_STACK_STATS_ENABLED) && MBED_STACK_STATS_ENABLED
+#endif
+#if defined(MBED_STACK_STATS_ENABLED) && MBED_STACK_STATS_ENABLED && defined(MBED_CONF_RTOS_PRESENT)
     send_stack_info();
-    Thread::attach_terminate_hook(NULL);
+    Kernel::attach_thread_terminate_hook(NULL);
 #endif
 #if defined(MBED_CPU_STATS_ENABLED)
     send_CPU_info();
@@ -87,6 +98,7 @@ static void send_CPU_info()
 }
 #endif
 
+#if defined(MBED_HEAP_STATS_ENABLED ) && MBED_HEAP_STATS_ENABLED
 static void send_heap_info()
 {
     mbed_stats_heap_t heap_stats;
@@ -94,8 +106,9 @@ static void send_heap_info()
     greentea_send_kv("max_heap_usage",heap_stats.max_size);
     greentea_send_kv("reserved_heap",heap_stats.reserved_size);
 }
+#endif
 
-#if defined(MBED_STACK_STATS_ENABLED) && MBED_STACK_STATS_ENABLED
+#if defined(MBED_STACK_STATS_ENABLED) && MBED_STACK_STATS_ENABLED && defined(MBED_CONF_RTOS_PRESENT)
 MBED_UNUSED static void send_stack_info()
 {
     mutex->lock();

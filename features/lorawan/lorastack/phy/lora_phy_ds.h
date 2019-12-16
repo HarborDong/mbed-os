@@ -307,7 +307,7 @@ typedef struct {
     /*!
      * A pointer to the payload containing the MAC commands.
      */
-    const uint8_t* payload;
+    const uint8_t *payload;
     /*!
      * The size of the payload.
      */
@@ -329,9 +329,10 @@ typedef struct {
      */
     int8_t current_tx_power;
     /*!
-     * The current number of repetitions.
+     * The current number of repetitions for obtaining a QOS level set by
+     * NS (applicable only to unconfirmed messages).
      */
-    uint8_t current_nb_rep;
+    uint8_t current_nb_trans;
 } adr_req_params_t;
 
 /**
@@ -401,7 +402,7 @@ typedef struct verify_adr_params_s {
     /*!
      * A pointer to the first element of the channels mask.
      */
-    uint16_t* channel_mask;
+    uint16_t *channel_mask;
 } verify_adr_params_t;
 
 /**
@@ -479,21 +480,29 @@ typedef struct continuous_wave_mode_params_s {
     uint16_t timeout;
 } cw_mode_params_t;
 
+/*!
+ * Template for a table
+ */
 typedef struct {
     void *table;
     uint8_t size;
 } loraphy_table_t;
 
+/*!
+ * Contains information regarding channel configuration of
+ * a given PHY
+ */
 typedef struct {
-
     uint8_t channel_list_size;
     uint8_t  mask_size;
-
     uint16_t *mask;
     uint16_t *default_mask;
     channel_params_t *channel_list;
 } loraphy_channels_t;
 
+/*!
+ * Global configuration parameters of a given PHY
+ */
 typedef struct {
     bool duty_cycle_enabled;
     bool accept_tx_param_setup_req;

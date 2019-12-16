@@ -34,27 +34,32 @@
 #include "cmsis.h"
 #include "pinmap.h"
 #include "mbed_error.h"
+#include "mbed_debug.h"
 #include "PeripheralPins.h"
 
-void analogin_init(analogin_t *obj, PinName pin)
+#if STATIC_PINMAP_READY
+#define ANALOGIN_INIT_DIRECT analogin_init_direct
+void analogin_init_direct(analogin_t *obj, const PinMap *pinmap)
+#else
+#define ANALOGIN_INIT_DIRECT _analogin_init_direct
+static void _analogin_init_direct(analogin_t *obj, const PinMap *pinmap)
+#endif
 {
-    uint32_t function = (uint32_t)NC;
+    uint32_t function = (uint32_t)pinmap->function;
+
+    // Get the peripheral name from the pin and assign it to the object
+    obj->handle.Instance = (ADC_TypeDef *)pinmap->peripheral;
 
     // ADC Internal Channels "pins"  (Temperature, Vref, Vbat, ...)
     //   are described in PinNames.h and PeripheralPins.c
     //   Pin value must be between 0xF0 and 0xFF
-    if ((pin < 0xF0) || (pin >= 0x100)) {
+    if ((pinmap->pin < 0xF0) || (pinmap->pin >= 0x100)) {
         // Normal channels
-        // Get the peripheral name from the pin and assign it to the object
-        obj->handle.Instance = (ADC_TypeDef *)pinmap_peripheral(pin, PinMap_ADC);
-        // Get the functions (adc channel) from the pin and assign it to the object
-        function = pinmap_function(pin, PinMap_ADC);
         // Configure GPIO
-        pinmap_pinout(pin, PinMap_ADC);
+        pin_function(pinmap->pin, pinmap->function);
+        pin_mode(pinmap->pin, PullNone);
     } else {
         // Internal channels
-        obj->handle.Instance = (ADC_TypeDef *)pinmap_peripheral(pin, PinMap_ADC_Internal);
-        function = pinmap_function(pin, PinMap_ADC_Internal);
         // No GPIO configuration for internal channels
     }
     MBED_ASSERT(obj->handle.Instance != (ADC_TypeDef *)NC);
@@ -63,7 +68,7 @@ void analogin_init(analogin_t *obj, PinName pin)
     obj->channel = STM_PIN_CHANNEL(function);
 
     // Save pin number for the read function
-    obj->pin = pin;
+    obj->pin = pinmap->pin;
 
     // Configure ADC object structures
     obj->handle.State = HAL_ADC_STATE_RESET;
@@ -110,6 +115,24 @@ void analogin_init(analogin_t *obj, PinName pin)
     if (!HAL_ADCEx_Calibration_GetValue(&obj->handle, ADC_SINGLE_ENDED)) {
         HAL_ADCEx_Calibration_Start(&obj->handle, ADC_SINGLE_ENDED);
     }
+}
+
+void analogin_init(analogin_t *obj, PinName pin)
+{
+    int peripheral;
+    int function;
+
+    if ((pin < 0xF0) || (pin >= 0x100)) {
+        peripheral = (int)pinmap_peripheral(pin, PinMap_ADC);
+        function = (int)pinmap_find_function(pin, PinMap_ADC);
+    } else {
+        peripheral = (int)pinmap_peripheral(pin, PinMap_ADC_Internal);
+        function = (int)pinmap_find_function(pin, PinMap_ADC_Internal);
+    }
+
+    const PinMap static_pinmap = {pin, peripheral, function};
+
+    ANALOGIN_INIT_DIRECT(obj, &static_pinmap);
 }
 
 uint16_t adc_read(analogin_t *obj)
@@ -211,16 +234,32 @@ uint16_t adc_read(analogin_t *obj)
             return 0;
     }
 
-    HAL_ADC_ConfigChannel(&obj->handle, &sConfig);
-
-    HAL_ADC_Start(&obj->handle); // Start conversion
-
-    // Wait end of conversion and get value
-    if (HAL_ADC_PollForConversion(&obj->handle, 10) == HAL_OK) {
-        return (uint16_t)HAL_ADC_GetValue(&obj->handle);
-    } else {
-        return 0;
+    if (HAL_ADC_ConfigChannel(&obj->handle, &sConfig) != HAL_OK) {
+        debug("HAL_ADC_ConfigChannel issue\n");;
     }
+
+    if (HAL_ADC_Start(&obj->handle) != HAL_OK) {
+        debug("HAL_ADC_Start issue\n");;
+    }
+
+    uint16_t MeasuredValue = 0;
+
+    if (HAL_ADC_PollForConversion(&obj->handle, 10) == HAL_OK) {
+        MeasuredValue = (uint16_t)HAL_ADC_GetValue(&obj->handle);
+    } else {
+        debug("HAL_ADC_PollForConversion issue\n");
+    }
+    LL_ADC_SetCommonPathInternalCh(__LL_ADC_COMMON_INSTANCE((&obj->handle)->Instance), LL_ADC_PATH_INTERNAL_NONE);
+    if (HAL_ADC_Stop(&obj->handle) != HAL_OK) {
+        debug("HAL_ADC_Stop issue\n");;
+    }
+
+    return MeasuredValue;
+}
+
+const PinMap *analogin_pinmap()
+{
+    return PinMap_ADC;
 }
 
 #endif

@@ -38,9 +38,10 @@ from collections import namedtuple, defaultdict
 from copy import copy
 from itertools import chain
 from os import walk, sep
-from os.path import (join, splitext, dirname, relpath, basename, split, normcase,
+from os.path import (join, splitext, dirname, relpath, basename, split, normpath,
                      abspath, exists)
 
+from tools.settings import ROOT
 from .ignore import MbedIgnoreSet, IGNORE_FILENAME
 
 # Support legacy build conventions: the original mbed build system did not have
@@ -80,8 +81,16 @@ LEGACY_TOOLCHAIN_NAMES = {
     'ARMC6': 'ARMC6',
 }
 
+MBED_LIB_FILENAME = 'mbed_lib.json'
+MBED_APP_FILENAME = 'mbed_app.json'
+CONFIG_FILES = set([
+    MBED_LIB_FILENAME,
+    MBED_APP_FILENAME
+])
+
 
 FileRef = namedtuple("FileRef", "name path")
+
 
 class FileType(object):
     C_SRC = "c"
@@ -126,6 +135,9 @@ class Resources(object):
         # publicly accessible things
         self.ignored_dirs = []
 
+        # library requirements
+        self._libs_filtered = None
+
         # Pre-mbed 2.0 ignore dirs
         self._legacy_ignore_dirs = (LEGACY_IGNORE_DIRS)
 
@@ -147,6 +159,11 @@ class Resources(object):
         self._sep = sep
 
         self._ignoreset = MbedIgnoreSet()
+
+        # make sure mbed-os root is added as include directory
+        script_dir = dirname(abspath(__file__))
+        mbed_os_root_dir = normpath(join(script_dir, '..', '..'))
+        self.add_file_ref(FileType.INC_DIR, mbed_os_root_dir, mbed_os_root_dir)
 
     def ignore_dir(self, directory):
         if self._collect_ignores:
@@ -189,7 +206,7 @@ class Resources(object):
             for file_type in self.ALL_FILE_TYPES:
                 v = [f._replace(name=f.name.replace(sep, self._sep)) for
                      f in self.get_file_refs(file_type)]
-                self._file_refs[file_type] = v
+                self._file_refs[file_type] = set(v)
 
     def __str__(self):
         s = []
@@ -250,39 +267,63 @@ class Resources(object):
                 dirname[len(label_type) + 1:] not in self._labels[label_type])
 
     def add_file_ref(self, file_type, file_name, file_path):
-        if sep != self._sep:
-            ref = FileRef(file_name.replace(sep, self._sep), file_path)
-        else:
-            ref = FileRef(file_name, file_path)
-        self._file_refs[file_type].add(ref)
+        if file_type:
+            if sep != self._sep:
+                file_name = file_name.replace(sep, self._sep)
+            # Mbed OS projects only use one linker script at a time, so remove
+            # any existing linker script when adding a new one
+            if file_type == FileType.LD_SCRIPT:
+                self._file_refs[file_type].clear()
+            self._file_refs[file_type].add(FileRef(file_name, file_path))
+
+    def _include_file(self, ref):
+        """Determine if a given file ref should be included in the build
+
+        Files may be part of a library if a parent directory contains an
+        mbed_lib.json. If a file is part of a library, include or exclude
+        it based on the library it's part of.
+        If a file is not part of a library, it's included.
+        """
+        _, path = ref
+        cur_dir = dirname(path)
+        included_lib_paths = [dirname(e.path) for e in self._libs_filtered]
+        excluded_lib_paths = [dirname(e.path) for e in self._excluded_libs]
+        while dirname(cur_dir) != cur_dir:
+            if cur_dir in included_lib_paths:
+                return True
+            elif cur_dir in excluded_lib_paths:
+                return False
+            cur_dir = dirname(cur_dir)
+        return True
 
     def get_file_refs(self, file_type):
         """Return a list of FileRef for every file of the given type"""
-        return list(self._file_refs[file_type])
+        if self._libs_filtered is None:
+            return list(self._file_refs[file_type])
+        else:
+            return [
+                ref for ref in self._file_refs[file_type]
+                if self._include_file(ref)
+            ]
 
-    def _all_parents(self, files):
-        for name in files:
-            components = name.split(self._sep)
-            start_at = 2 if components[0] in set(['', '.']) else 1
-            for index, directory in reversed(list(enumerate(components))[start_at:]):
-                if directory in self._prefixed_labels:
-                    start_at = index + 1
-                    break
-            for n in range(start_at, len(components)):
-                parent = self._sep.join(components[:n])
-                yield parent
+    def filter_by_libraries(self, libraries_included):
+        """
+        Call after completely done scanning to filter resources based on
+        libraries
+        """
+        self._libs_filtered = set(libraries_included)
+        all_library_refs = set(
+            ref for ref in self._file_refs[FileType.JSON]
+            if ref.name.endswith(MBED_LIB_FILENAME)
+        )
+        self._excluded_libs = all_library_refs - self._libs_filtered
+        if self._collect_ignores:
+            self.ignored_dirs += [
+                dirname(n) or "." for n, _ in self._excluded_libs
+            ]
 
     def _get_from_refs(self, file_type, key):
-        if file_type is FileType.INC_DIR:
-            parents = set(self._all_parents(self._get_from_refs(
-                FileType.HEADER, key)))
-            parents.add(".")
-        else:
-            parents = set()
-        return sorted(
-            list(parents) + [key(f) for f in self.get_file_refs(file_type)]
-        )
-
+        return sorted([key(f) for f in self.get_file_refs(file_type)])
 
     def get_file_names(self, file_type):
         return self._get_from_refs(file_type, lambda f: f.name)
@@ -379,8 +420,8 @@ class Resources(object):
             base_path = path
         if into_path is None:
             into_path = path
-        if self._collect_ignores and path in self.ignored_dirs:
-            self.ignored_dirs.remove(path)
+        if self._collect_ignores and relpath(path, base_path) in self.ignored_dirs:
+            self.ignored_dirs.remove(relpath(path, base_path))
         if exclude_paths:
             self.add_ignore_patterns(
                 path, base_path, [join(e, "*") for e in exclude_paths])
@@ -392,9 +433,9 @@ class Resources(object):
                 self._ignoreset.add_mbedignore(
                     real_base, join(root, IGNORE_FILENAME))
 
-            root_path =join(relpath(root, base_path))
+            root_path = join(relpath(root, base_path))
             if self._ignoreset.is_ignored(join(root_path,"")):
-                self.ignore_dir(root_path)
+                self.ignore_dir(join(into_path, root_path))
                 dirs[:] = []
                 continue
 
@@ -407,11 +448,17 @@ class Resources(object):
                 if (any(self._not_current_label(d, t) for t
                         in self._labels.keys())):
                     self._label_paths.append((dir_path, base_path, into_path))
-                    self.ignore_dir(dir_path)
+                    self.ignore_dir(join(
+                        into_path,
+                        relpath(dir_path, base_path)
+                    ))
                     dirs.remove(d)
                 elif (d.startswith('.') or d in self._legacy_ignore_dirs or
                       self._ignoreset.is_ignored(join(root_path, d, ""))):
-                    self.ignore_dir(dir_path)
+                    self.ignore_dir(join(
+                        into_path,
+                        relpath(dir_path, base_path)
+                    ))
                     dirs.remove(d)
 
             # Add root to include paths
@@ -429,6 +476,8 @@ class Resources(object):
         ".h": FileType.HEADER,
         ".hh": FileType.HEADER,
         ".hpp": FileType.HEADER,
+        ".inc": FileType.HEADER,
+        ".tpp": FileType.HEADER,
         ".o": FileType.OBJECT,
         ".hex": FileType.HEX,
         ".bin": FileType.BIN,
@@ -447,28 +496,45 @@ class Resources(object):
         ".ar": FileType.LIB_DIR,
     }
 
+    def _all_parents(self, file_path, base_path, into_path):
+        suffix = relpath(file_path, base_path)
+        components = suffix.split(self._sep)
+        start_at = 0
+        for index, directory in reversed(list(enumerate(components))):
+            if directory in self._prefixed_labels:
+                start_at = index + 1
+                break
+        for n in range(start_at, len(components)):
+            parent_name_parts = components[:n]
+            if into_path:
+                parent_name_parts.insert(0, into_path)
+            parent_name = self._sep.join(parent_name_parts)
+            parent_path = join(base_path, *components[:n])
+            yield FileRef(parent_name, parent_path)
+
     def _add_file(self, file_path, base_path, into_path):
         """ Add a single file into the resources object that was found by
         scanning starting as base_path
         """
 
+        fake_path = join(into_path, relpath(file_path, base_path))
         if  (self._ignoreset.is_ignored(relpath(file_path, base_path)) or
              basename(file_path).startswith(".")):
-            self.ignore_dir(relpath(file_path, base_path))
+            self.ignore_dir(fake_path)
             return
 
-        fake_path = join(into_path, relpath(file_path, base_path))
         _, ext = splitext(file_path)
-        try:
-            file_type = self._EXT[ext.lower()]
-            self.add_file_ref(file_type, fake_path, file_path)
-        except KeyError:
-            pass
-        try:
-            dir_type = self._DIR_EXT[ext.lower()]
-            self.add_file_ref(dir_type, dirname(fake_path), dirname(file_path))
-        except KeyError:
-            pass
+        if ext == "" and "cxxsupport" in fake_path:
+            file_type = FileType.HEADER
+        else:
+            file_type = self._EXT.get(ext.lower())
+        self.add_file_ref(file_type, fake_path, file_path)
+        if file_type == FileType.HEADER:
+            for name, path in self._all_parents(file_path, base_path, into_path):
+                self.add_file_ref(FileType.INC_DIR, name, path)
+
+        dir_type = self._DIR_EXT.get(ext.lower())
+        self.add_file_ref(dir_type, dirname(fake_path), dirname(file_path))
 
 
     def scan_with_toolchain(self, src_paths, toolchain, dependencies_paths=None,
@@ -531,3 +597,45 @@ class Resources(object):
         config.load_resources(self)
         return self
 
+    def filter(self, res_filter):
+        if res_filter is None:
+            return
+
+        for t in res_filter.file_types:
+            self._file_refs[t] = set(filter(
+                res_filter.predicate, self._file_refs[t]))
+
+
+class ResourceFilter(object):
+    def __init__(self, file_types):
+        self.file_types = file_types
+
+    def predicate(self, ref):
+        raise NotImplemented
+
+
+class SpeOnlyResourceFilter(ResourceFilter):
+    def __init__(self):
+        ResourceFilter.__init__(
+            self, [FileType.ASM_SRC, FileType.C_SRC, FileType.CPP_SRC])
+
+    def predicate(self, ref):
+        return 'COMPONENT_SPE' in ref.name
+
+
+class OsAndSpeResourceFilter(ResourceFilter):
+    def __init__(self):
+        ResourceFilter.__init__(
+            self, [FileType.ASM_SRC, FileType.C_SRC, FileType.CPP_SRC])
+
+    def predicate(self, ref):
+        return ROOT in abspath(ref.name) or 'COMPONENT_SPE' in ref.name
+
+
+class PsaManifestResourceFilter(ResourceFilter):
+    def __init__(self):
+        ResourceFilter.__init__(
+            self, [FileType.JSON])
+
+    def predicate(self, ref):
+        return not ref.name.endswith('_psa.json')

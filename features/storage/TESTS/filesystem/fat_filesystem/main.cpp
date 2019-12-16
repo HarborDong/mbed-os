@@ -26,32 +26,47 @@
 using namespace utest::v1;
 
 #ifndef MBED_EXTENDED_TESTS
-    #error [NOT_SUPPORTED] Filesystem tests not supported by default
-#endif
+#error [NOT_SUPPORTED] Filesystem tests not supported by default
+#else
+
+static const int mem_alloc_threshold = 32 * 1024;
 
 // Test block device
 #define BLOCK_SIZE 512
-HeapBlockDevice bd(128*BLOCK_SIZE, BLOCK_SIZE);
+#define BLOCK_COUNT 128
+HeapBlockDevice *bd = 0;
 
 
 // Test formatting
-void test_format() {
-    int err = FATFileSystem::format(&bd);
+void test_format()
+{
+    uint8_t *dummy = new (std::nothrow) uint8_t[mem_alloc_threshold];
+    TEST_SKIP_UNLESS_MESSAGE(dummy, "Not enough heap memory to run test. Test skipped.");
+
+    delete[] dummy;
+
+    bd = new (std::nothrow) HeapBlockDevice(BLOCK_COUNT * BLOCK_SIZE, BLOCK_SIZE);
+    TEST_SKIP_UNLESS_MESSAGE(bd, "Not enough heap memory to run test. Test skipped.");
+
+    int err = FATFileSystem::format(bd);
     TEST_ASSERT_EQUAL(0, err);
 }
 
 
 // Simple test for reading/writing files
 template <ssize_t TEST_SIZE>
-void test_read_write() {
+void test_read_write()
+{
+    TEST_SKIP_UNLESS_MESSAGE(bd, "Not enough heap memory to run test. Test skipped.");
+
     FATFileSystem fs("fat");
 
-    int err = fs.mount(&bd);
+    int err = fs.mount(bd);
     TEST_ASSERT_EQUAL(0, err);
 
-    uint8_t *buffer = (uint8_t *)malloc(TEST_SIZE);
-    TEST_ASSERT(buffer);
-    
+    uint8_t *buffer = new (std::nothrow) uint8_t[TEST_SIZE];
+    TEST_SKIP_UNLESS_MESSAGE(buffer, "Not enough heap memory to run test. Test skipped.");
+
     // Fill with random sequence
     srand(1);
     for (int i = 0; i < TEST_SIZE; i++) {
@@ -66,6 +81,10 @@ void test_read_write() {
     TEST_ASSERT_EQUAL(TEST_SIZE, size);
     err = file.close();
     TEST_ASSERT_EQUAL(0, err);
+
+    struct stat st;
+    err = fs.stat("test_read_write.dat", &st);
+    TEST_ASSERT_EQUAL(TEST_SIZE, st.st_size);
 
     err = file.open(&fs, "test_read_write.dat", O_RDONLY);
     TEST_ASSERT_EQUAL(0, err);
@@ -82,14 +101,19 @@ void test_read_write() {
 
     err = fs.unmount();
     TEST_ASSERT_EQUAL(0, err);
+
+    delete[] buffer;
 }
 
 
 // Simple test for iterating dir entries
-void test_read_dir() {
+void test_read_dir()
+{
+    TEST_SKIP_UNLESS_MESSAGE(bd, "Not enough heap memory to run test. Test skipped.");
+
     FATFileSystem fs("fat");
 
-    int err = fs.mount(&bd);
+    int err = fs.mount(bd);
     TEST_ASSERT_EQUAL(0, err);
 
     err = fs.mkdir("test_read_dir", S_IRWXU | S_IRWXG | S_IRWXO);
@@ -143,24 +167,31 @@ void test_read_dir() {
 
     err = fs.unmount();
     TEST_ASSERT_EQUAL(0, err);
+
+    delete bd;
+    bd = 0;
 }
 
 
 // Test setup
-utest::v1::status_t test_setup(const size_t number_of_cases) {
+utest::v1::status_t test_setup(const size_t number_of_cases)
+{
     GREENTEA_SETUP(10, "default_auto");
     return verbose_test_setup_handler(number_of_cases);
 }
 
 Case cases[] = {
     Case("Testing formating", test_format),
-    Case("Testing read write < block", test_read_write<BLOCK_SIZE/2>),
-    Case("Testing read write > block", test_read_write<2*BLOCK_SIZE>),
+    Case("Testing read write < block", test_read_write < BLOCK_SIZE / 2 >),
+    Case("Testing read write > block", test_read_write<2 * BLOCK_SIZE>),
     Case("Testing dir iteration", test_read_dir),
 };
 
 Specification specification(test_setup, cases);
 
-int main() {
+int main()
+{
     return !Harness::run(specification);
 }
+
+#endif // MBED_EXTENDED_TESTS

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2018, Arm Limited and affiliates.
+ * Copyright (c) 2013-2019, Arm Limited and affiliates.
  * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -23,7 +23,7 @@
 #include "eventOS_event.h"
 #include "eventOS_event_timer.h"
 #include "socket_api.h"
-#include "Core/include/socket.h"
+#include "Core/include/ns_socket.h"
 #include "nsdynmemLIB.h"
 #include "ns_trace.h"
 #include "string.h"
@@ -79,7 +79,7 @@ int16_t mle_class_rfd_entry_count_get(struct protocol_interface_info_entry *cur)
     uint16_t count = 0;
 
     ns_list_foreach(mac_neighbor_table_entry_t, entry, mac_table_list) {
-        if (!entry->ffd_device ) {
+        if (!entry->ffd_device) {
             count++;
         }
     }
@@ -139,7 +139,7 @@ bool mle_neigh_entry_frame_counter_update(struct mac_neighbor_table_entry *entry
         frame_counter = common_read_32_bit(mle_tlv_info.dataPtr);
     }
     mlme_device_descriptor_t device_desc;
-    mac_helper_device_description_write(cur, &device_desc, entry_temp->mac64, entry_temp->mac16,frame_counter, false);
+    mac_helper_device_description_write(cur, &device_desc, entry_temp->mac64, entry_temp->mac16, frame_counter, false);
     mac_helper_devicetable_set(&device_desc, cur, entry_temp->index, key_id, false);
     return true;
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2018, Arm Limited and affiliates.
+ * Copyright (c) 2014-2019, Arm Limited and affiliates.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -68,6 +68,7 @@ struct mac_neighbor_table_entry;
 #define THREAD_KEY_INDEX(seq) ((uint8_t) (((seq) & 0x0000007f) + 1))
 
 extern uint8_t thread_version;
+extern uint8_t thread_max_mcast_addr;
 extern uint32_t thread_delay_timer_default;
 extern uint32_t thread_router_selection_jitter;
 extern uint16_t thread_joiner_port;
@@ -98,8 +99,8 @@ typedef struct thread_neigh_table_entry_s {
     uint8_t         mlEid[8];
     uint32_t        last_contact_time;  /*!< monotonic time - hard to define "contact"; used for Thread Leasequery replies */
     uint16_t        link_margin;
-    bool secured_data_request:1;
-    bool request_full_data_set:1;
+    bool secured_data_request: 1;
+    bool request_full_data_set: 1;
 } thread_neigh_table_entry_t ;
 
 /**
@@ -191,6 +192,7 @@ typedef struct thread_connectivity_s {
 typedef struct thread_parent_info_s {
     uint8_t mac64[8];
     uint16_t shortAddress;
+    uint16_t version;
     uint8_t router_id;
     uint8_t pathCostToLeader;
     bool    childUpdatePending: 1;
@@ -229,8 +231,8 @@ typedef struct thread_master_secret_material_s {
     uint8_t     historyKey[32];
     uint32_t    keySwitchGuardTimer;
     uint32_t    keyRotation;
-    bool        historyKeyValid:1;
-    bool        valid_Info:1;
+    bool        historyKeyValid: 1;
+    bool        valid_Info: 1;
     uint8_t     historyKeyId;
 } thread_master_secret_material_t;
 
@@ -243,7 +245,7 @@ typedef struct thread_commissioner {
     uint16_t session_id;    /* session_id is valid even if commissioner is not valid */
     thread_commissioner_register_status_e commissioner_registration; /* Only for Leader */
     uint8_t steering_data_len;
-    bool commissioner_valid:1;
+    bool commissioner_valid: 1;
 } thread_commissioner_t;
 
 typedef struct thread_announcement_s {
@@ -267,8 +269,46 @@ typedef struct thread_router_select {
     timeout_t *reedAdvertisementTimeout;
 } thread_router_select_t;
 
-struct thread_extension_info;
-struct thread_extension_credentials;
+typedef struct thread_ccm_info {
+    int8_t coap_service_id;
+    uint8_t sequence_number;
+    uint32_t delay_timer;
+    uint32_t mlr_timer;
+    timeout_t *reset_timeout;
+    uint16_t rloc;
+    uint16_t relay_port_ae;
+    uint16_t relay_port_nmkp;
+    int8_t listen_socket_ae;
+    int8_t listen_socket_nmkp;
+    bool update_needed: 1;
+} thread_ccm_info_t;
+
+typedef void thread_commission_done_cb(int8_t interface_id);
+
+typedef struct thread_ccm_credentials {
+    uint8_t domain_name[16];                        // Thread CCM domain name
+    uint8_t ccm_addr[16];                           // CCM destination address
+    const unsigned char *device_certificate_ptr;    // Pointer to CCM device certificate for Autonomous Enrollment
+    unsigned char *domain_ca_certificate_ptr;       // Pointer to Thread CCM domain CA certificate
+    unsigned char *domain_certificate_ptr;          // Pointer to Thread CCM domain certificate
+    unsigned char *domain_pk_ptr;                   // Pointer to Thread domain certificate private key
+    const unsigned char *device_pk_ptr;             // Pointer to CCM device certificate private key
+    thread_commission_done_cb *ccm_done_cb;
+    timeout_t *attach_timeout;
+
+    uint16_t device_certificate_len;                // Device certificate length
+    uint16_t domain_certificate_len;                // Domain certificate length
+    uint16_t domain_ca_certificate_len;             // Domain CA certificate length
+    uint16_t device_pk_len;                         // Device certificate private key length
+    uint16_t domain_pk_len;                         // Domain certificate private key length
+    uint16_t ccm_port;                              // CCM destination port
+
+    int8_t coap_service_secure_session_id;
+    int8_t interface_id;
+    bool reattach_ongoing;
+
+    ns_list_link_t link;
+} thread_ccm_credentials_t;
 
 typedef struct thread_previous_partition_info_s {
     uint32_t partitionId; //partition ID of the previous partition
@@ -296,8 +336,8 @@ typedef struct thread_info_s {
     thread_commissioning_native_select_cb *native_commissioner_cb;
     thread_network_data_tlv_cb *network_data_tlv_cb;
     thread_announcement_t *announcement_info;
-    struct thread_extension_info *extension_info;
-    struct thread_extension_credentials *extension_credentials_ptr;
+    thread_ccm_info_t *ccm_info;
+    thread_ccm_credentials_t *ccm_credentials_ptr;
     thread_attach_device_mode_e thread_device_mode;
     thread_attach_state_e thread_attached_state; //Indicate Thread stack state
     thread_registered_mcast_addr_list_t child_mcast_list;
@@ -309,25 +349,28 @@ typedef struct thread_info_s {
     uint16_t routerShortAddress;
     uint16_t reedJitterTimer;
     uint16_t reedMergeAdvTimer;
-    uint16_t routerIdReqCoapID;  // COAP msg id of RouterID request
     int16_t childUpdateReqTimer;
     uint16_t childUpdateReqMsgId;
     uint16_t proactive_an_timer;
+    uint16_t thread_maintenance_timer;
     //uint8_t lastValidRouteMask[8];
     int8_t interface_id; //Thread Interface ID
     uint8_t version;
+    uint8_t parent_priority;
     uint8_t testMaxActiveRouterIdLimit; //Default for this is 32
     uint8_t maxChildCount; //Default for this is 24
     uint8_t partition_weighting;
     bool rfc6775: 1;
     bool requestFullNetworkData: 1;
     bool leaderCab: 1;
+    bool routerIdRequested: 1;
     bool releaseRouterId: 1;
     bool networkSynch: 1;
     bool networkDataRequested: 1;
     bool end_device_link_synch: 1;
     bool router_mc_addrs_registered: 1;
-    bool leader_synced:1; // flag used by leader after restart
+    bool link_sync_allowed: 1;
+    bool leader_synced: 1; // flag used by leader after restart
 } thread_info_t;
 
 #ifdef HAVE_THREAD
@@ -397,6 +440,11 @@ void thread_child_mcast_entries_remove(protocol_interface_info_entry_t *cur, con
 uint8_t thread_leader_data_tlv_size(protocol_interface_info_entry_t *cur);
 uint8_t *thread_leader_data_tlv_write(uint8_t *ptr, protocol_interface_info_entry_t *cur);
 uint8_t *thread_address_registration_tlv_write(uint8_t *ptr, protocol_interface_info_entry_t *cur);
+
+// returns true if SED/MED needs to register additional address to parent
+bool thread_addresses_needs_to_be_registered(protocol_interface_info_entry_t *cur);
+// write mesh local address tlv
+uint8_t *thread_ml_address_tlv_write(uint8_t *ptr, protocol_interface_info_entry_t *cur);
 int thread_link_reject_send(protocol_interface_info_entry_t *interface, const uint8_t *ll64);
 thread_leader_info_t *thread_allocate_and_init_leader_private_data(void);
 thread_route_cost_t thread_link_quality_to_cost(thread_link_quality_e quality);
@@ -441,6 +489,20 @@ bool thread_partition_match(protocol_interface_info_entry_t *cur, thread_leader_
 void thread_partition_info_update(protocol_interface_info_entry_t *cur, thread_leader_data_t *leaderData);
 void thread_neighbor_communication_update(protocol_interface_info_entry_t *cur, uint8_t neighbor_attribute_index);
 bool thread_stable_context_check(protocol_interface_info_entry_t *cur, buffer_t *buf);
+void thread_maintenance_timer_set(protocol_interface_info_entry_t *cur);
+
+#ifdef HAVE_THREAD_V2
+void thread_common_ccm_allocate(protocol_interface_info_entry_t *cur);
+void thread_common_ccm_free(protocol_interface_info_entry_t *cur);
+bool thread_common_ccm_enabled(protocol_interface_info_entry_t *cur);
+int thread_common_primary_bbr_get(struct protocol_interface_info_entry *cur, uint8_t *addr_ptr, uint8_t *seq_ptr, uint32_t *mlr_timer_ptr, uint32_t *delay_timer_ptr);
+#else
+#define thread_common_ccm_allocate(cur)
+#define thread_common_ccm_free(cur)
+#define thread_common_ccm_enabled(cur) (false)
+#define thread_common_primary_bbr_get(cur, addr_ptr, seq_ptr, mlr_timer_ptr, delay_timer_ptr) (0)
+
+#endif
 #else // HAVE_THREAD
 
 NS_DUMMY_DEFINITIONS_OK

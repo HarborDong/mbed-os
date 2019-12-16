@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2017, Arm Limited and affiliates.
+ * Copyright (c) 2016-2018, Arm Limited and affiliates.
  * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -21,6 +21,7 @@
 uint16_t mac_read_tx_queue_sizes(const fhss_api_t *fhss_api, bool broadcast_queue);
 int mac_read_64bit_mac_address(const fhss_api_t *fhss_api, uint8_t *mac_address);
 uint32_t mac_read_phy_datarate(const fhss_api_t *fhss_api);
+uint32_t mac_read_phy_timestamp(const fhss_api_t *fhss_api);
 int mac_set_channel(const fhss_api_t *fhss_api, uint8_t channel_number);
 int mac_fhss_frame_tx(const fhss_api_t *fhss_api, int frame_type);
 int mac_synch_lost(const fhss_api_t *fhss_api);

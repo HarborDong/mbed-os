@@ -27,7 +27,7 @@ using namespace utest::v1;
 // test configuration
 #ifndef MBED_TEST_SIM_BLOCKDEVICE
 #error [NOT_SUPPORTED] Simulation block device required for wear leveling tests
-#endif
+#else
 
 #ifndef MBED_TEST_SIM_BLOCKDEVICE_DECL
 #define MBED_TEST_SIM_BLOCKDEVICE_DECL MBED_TEST_SIM_BLOCKDEVICE bd(MBED_TEST_BLOCK_COUNT*512, 1, 1, 512)
@@ -62,11 +62,11 @@ static uint32_t test_wear_leveling_size(uint32_t block_count)
     bd_size_t block_size = bd.get_erase_size();
     bd.deinit();
 
-    SlicingBlockDevice slice(&bd, 0, block_count*block_size);
+    SlicingBlockDevice slice(&bd, 0, block_count * block_size);
     ExhaustibleBlockDevice ebd(&slice, MBED_TEST_ERASE_CYCLES);
 
     printf("Testing size %llu bytes (%lux%llu) blocks\n",
-        block_count*block_size, block_count, block_size);
+           block_count * block_size, block_count, block_size);
     setup_atomic_operations(&ebd, true);
 
     int64_t cycles = 0;
@@ -118,3 +118,5 @@ int main()
 {
     Harness::run(specification);
 }
+
+#endif // MBED_TEST_SIM_BLOCKDEVICE

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2017, Arm Limited and affiliates.
+ * Copyright (c) 2014-2019, Arm Limited and affiliates.
  * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,7 +19,7 @@
 #include "ns_types.h"
 #include <string.h>
 
-#include "Core/include/address.h"
+#include "Core/include/ns_address_internal.h"
 #include "NWK_INTERFACE/Include/protocol.h"
 #include "6LoWPAN/Bootstraps/protocol_6lowpan.h"
 #include "RPL/rpl_protocol.h"
@@ -70,17 +70,22 @@ int8_t arm_nwk_6lowpan_rpl_dodag_init(int8_t interface_id, const uint8_t *dodag_
      * root storage.
      */
     if ((flags & RPL_MODE_MASK) == RPL_MODE_NON_STORING) {
-        rpl_control_set_memory_limits(64*1024, 0);
+        rpl_control_set_memory_limits(64 * 1024, 0);
     }
     return 0;
 #else // !HAVE_RPL_ROOT
+    (void)dodag_id;
+    (void)config;
+    (void)instance_id;
+    (void)flags;
+
     return -1;
 #endif
 }
 
 int8_t arm_nwk_6lowpan_rpl_memory_limit_set(size_t soft_limit, size_t hard_limit)
 {
-    if (hard_limit != 0 && soft_limit > hard_limit ) {
+    if (hard_limit != 0 && soft_limit > hard_limit) {
         return -1;
     }
 
@@ -230,7 +235,7 @@ uint8_t rpl_instance_list_read(uint8_t *buffer_ptr, uint8_t buffer_size)
                 buffer_size -= 16;
             }
             ret_val++;
-         }
+        }
     }
 
     return ret_val;
@@ -252,7 +257,8 @@ uint8_t rpl_read_dodag_info(rpl_dodag_info_t *dodag_ptr, uint8_t instance_id)
 
 #else /* HAVE_RPL */
 
-int8_t arm_nwk_6lowpan_rpl_dodag_init(int8_t interface_id, const uint8_t *dodag_id, const dodag_config_t *config, uint8_t instance_id, uint8_t flags) {
+int8_t arm_nwk_6lowpan_rpl_dodag_init(int8_t interface_id, const uint8_t *dodag_id, const dodag_config_t *config, uint8_t instance_id, uint8_t flags)
+{
     (void)interface_id;
     (void)dodag_id;
     (void)config;
@@ -261,17 +267,20 @@ int8_t arm_nwk_6lowpan_rpl_dodag_init(int8_t interface_id, const uint8_t *dodag_
     return -1;
 }
 
-int8_t arm_nwk_6lowpan_rpl_dodag_remove(int8_t interface_id) {
+int8_t arm_nwk_6lowpan_rpl_dodag_remove(int8_t interface_id)
+{
     (void)interface_id;
     return -1;
 }
 
-int8_t arm_nwk_6lowpan_rpl_dodag_start(int8_t interface_id) {
+int8_t arm_nwk_6lowpan_rpl_dodag_start(int8_t interface_id)
+{
     (void)interface_id;
     return -1;
 }
 
-int8_t arm_nwk_6lowpan_rpl_dodag_prefix_update(int8_t interface_id, uint8_t *prefix_ptr, uint8_t prefix_len, uint8_t flags, uint32_t lifetime) {
+int8_t arm_nwk_6lowpan_rpl_dodag_prefix_update(int8_t interface_id, uint8_t *prefix_ptr, uint8_t prefix_len, uint8_t flags, uint32_t lifetime)
+{
     (void)interface_id;
     (void)prefix_ptr;
     (void)prefix_len;
@@ -280,7 +289,8 @@ int8_t arm_nwk_6lowpan_rpl_dodag_prefix_update(int8_t interface_id, uint8_t *pre
     return -1;
 }
 
-int8_t arm_nwk_6lowpan_rpl_dodag_route_update(int8_t interface_id, uint8_t *route_ptr, uint8_t prefix_len, uint8_t flags, uint32_t lifetime) {
+int8_t arm_nwk_6lowpan_rpl_dodag_route_update(int8_t interface_id, uint8_t *route_ptr, uint8_t prefix_len, uint8_t flags, uint32_t lifetime)
+{
     (void)interface_id;
     (void)route_ptr;
     (void)prefix_len;
@@ -289,34 +299,40 @@ int8_t arm_nwk_6lowpan_rpl_dodag_route_update(int8_t interface_id, uint8_t *rout
     return -1;
 }
 
-int8_t arm_nwk_6lowpan_rpl_dodag_poison(int8_t interface_id) {
+int8_t arm_nwk_6lowpan_rpl_dodag_poison(int8_t interface_id)
+{
     (void)interface_id;
     return -1;
 }
 
-int8_t arm_nwk_6lowpan_rpl_dodag_dao_trig(int8_t interface_id) {
+int8_t arm_nwk_6lowpan_rpl_dodag_dao_trig(int8_t interface_id)
+{
     (void)interface_id;
     return -1;
 }
 
-int8_t arm_nwk_6lowpan_rpl_dodag_version_increment(int8_t interface_id) {
+int8_t arm_nwk_6lowpan_rpl_dodag_version_increment(int8_t interface_id)
+{
     (void)interface_id;
     return -1;
 }
 
-uint8_t rpl_instance_list_read(uint8_t *cache_ptr, uint8_t cache_size) {
+uint8_t rpl_instance_list_read(uint8_t *cache_ptr, uint8_t cache_size)
+{
     (void)cache_ptr;
     (void)cache_size;
     return 0;
 }
 
-uint8_t rpl_read_dodag_info(rpl_dodag_info_t *dodag_ptr, uint8_t instance_id) {
+uint8_t rpl_read_dodag_info(rpl_dodag_info_t *dodag_ptr, uint8_t instance_id)
+{
     (void)dodag_ptr;
     (void)instance_id;
     return 0;
 }
 
-int8_t arm_nwk_6lowpan_rpl_dodag_pref_set(int8_t interface_id, uint8_t preference) {
+int8_t arm_nwk_6lowpan_rpl_dodag_pref_set(int8_t interface_id, uint8_t preference)
+{
     (void) interface_id;
     (void) preference;
     return 0;

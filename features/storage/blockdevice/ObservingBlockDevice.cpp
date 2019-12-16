@@ -22,8 +22,8 @@
 
 #include "ObservingBlockDevice.h"
 #include "ReadOnlyBlockDevice.h"
-#include "mbed.h"
 
+namespace mbed {
 
 ObservingBlockDevice::ObservingBlockDevice(BlockDevice *bd)
     : _bd(bd)
@@ -36,7 +36,7 @@ ObservingBlockDevice::~ObservingBlockDevice()
     // Does nothing
 }
 
-void ObservingBlockDevice::attach(Callback<void(BlockDevice *)> cb)
+void ObservingBlockDevice::attach(mbed::Callback<void(BlockDevice *)> cb)
 {
     _change = cb;
 }
@@ -110,3 +110,15 @@ bd_size_t ObservingBlockDevice::size() const
 {
     return _bd->size();
 }
+
+const char *ObservingBlockDevice::get_type() const
+{
+    if (_bd != NULL) {
+        return _bd->get_type();
+    }
+
+    return NULL;
+}
+
+} // namespace mbed
+

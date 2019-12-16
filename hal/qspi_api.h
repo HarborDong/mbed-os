@@ -3,6 +3,7 @@
 /** @{*/
 /* mbed Microcontroller Library
  * Copyright (c) 2017 ARM Limited
+ * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +21,7 @@
 #define MBED_QSPI_API_H
 
 #include "device.h"
+#include "pinmap.h"
 #include <stdbool.h>
 
 #if DEVICE_QSPI
@@ -36,6 +38,22 @@ extern "C" {
 /** QSPI HAL object
  */
 typedef struct qspi_s qspi_t;
+
+typedef struct {
+    int peripheral;
+    PinName data0_pin;
+    int data0_function;
+    PinName data1_pin;
+    int data1_function;
+    PinName data2_pin;
+    int data2_function;
+    PinName data3_pin;
+    int data3_function;
+    PinName sclk_pin;
+    int sclk_function;
+    PinName ssel_pin;
+    int ssel_function;
+} qspi_pinmap_t;
 
 /** QSPI Bus width
  *
@@ -58,12 +76,14 @@ typedef enum qspi_address_size {
 
 /** Alternative size in bits
  */
-typedef enum qspi_alt_size {
-    QSPI_CFG_ALT_SIZE_8,
-    QSPI_CFG_ALT_SIZE_16,
-    QSPI_CFG_ALT_SIZE_24,
-    QSPI_CFG_ALT_SIZE_32,
-} qspi_alt_size_t;
+typedef uint8_t qspi_alt_size_t;
+
+// The following defines are provided for backwards compatibilty. New code should explicitly
+// specify the required number of alt bits.
+#define QSPI_CFG_ALT_SIZE_8 8u
+#define QSPI_CFG_ALT_SIZE_16 16u
+#define QSPI_CFG_ALT_SIZE_24 24u
+#define QSPI_CFG_ALT_SIZE_32 32u
 
 /** QSPI command
  *
@@ -119,6 +139,20 @@ typedef enum qspi_status {
            QSPI_STATUS_ERROR otherwise
  */
 qspi_status_t qspi_init(qspi_t *obj, PinName io0, PinName io1, PinName io2, PinName io3, PinName sclk, PinName ssel, uint32_t hz, uint8_t mode);
+
+/** Initialize QSPI peripheral.
+ *
+ * It should initialize QSPI pins (io0-io3, sclk and ssel), set frequency, clock polarity and phase mode. The clock for the peripheral should be enabled
+ *
+ * @param obj QSPI object
+ * @param pinmap pointer to structure which holds static pinmap
+ * @param hz The bus frequency
+ * @param mode Clock polarity and phase mode (0 - 3)
+ * @return QSPI_STATUS_OK if initialisation successfully executed
+           QSPI_STATUS_INVALID_PARAMETER if invalid parameter found
+           QSPI_STATUS_ERROR otherwise
+ */
+qspi_status_t qspi_init_direct(qspi_t *obj, const qspi_pinmap_t *pinmap, uint32_t hz, uint8_t mode);
 
 /** Deinitilize QSPI peripheral
  *
@@ -180,6 +214,60 @@ qspi_status_t qspi_command_transfer(qspi_t *obj, const qspi_command_t *command, 
            QSPI_STATUS_ERROR otherwise
  */
 qspi_status_t qspi_read(qspi_t *obj, const qspi_command_t *command, void *data, size_t *length);
+
+/** Get the pins that support QSPI SCLK
+ *
+ * Return a PinMap array of pins that support QSPI SCLK in
+ * master mode. The array is terminated with {NC, NC, 0}.
+ *
+ * @return PinMap array
+ */
+const PinMap *qspi_master_sclk_pinmap(void);
+
+/** Get the pins that support QSPI SSEL
+ *
+ * Return a PinMap array of pins that support QSPI SSEL in
+ * master mode. The array is terminated with {NC, NC, 0}.
+ *
+ * @return PinMap array
+ */
+const PinMap *qspi_master_ssel_pinmap(void);
+
+/** Get the pins that support QSPI DATA0
+ *
+ * Return a PinMap array of pins that support QSPI DATA0 in
+ * master mode. The array is terminated with {NC, NC, 0}.
+ *
+ * @return PinMap array
+ */
+const PinMap *qspi_master_data0_pinmap(void);
+
+/** Get the pins that support QSPI DATA1
+ *
+ * Return a PinMap array of pins that support QSPI DATA1 in
+ * master mode. The array is terminated with {NC, NC, 0}.
+ *
+ * @return PinMap array
+ */
+const PinMap *qspi_master_data1_pinmap(void);
+
+/** Get the pins that support QSPI DATA2
+ *
+ * Return a PinMap array of pins that support QSPI DATA2 in
+ * master mode. The array is terminated with {NC, NC, 0}.
+ *
+ * @return PinMap array
+ */
+const PinMap *qspi_master_data2_pinmap(void);
+
+/** Get the pins that support QSPI DATA3
+ *
+ * Return a PinMap array of pins that support QSPI DATA3 in
+ * master mode. The array is terminated with {NC, NC, 0}.
+ *
+ * @return PinMap array
+ */
+const PinMap *qspi_master_data3_pinmap(void);
 
 /**@}*/
 

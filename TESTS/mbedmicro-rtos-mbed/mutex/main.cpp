@@ -13,19 +13,19 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+#if defined(MBED_RTOS_SINGLE_THREAD) || !defined(MBED_CONF_RTOS_PRESENT)
+#error [NOT_SUPPORTED] Mutex test cases require RTOS with multithread to run
+#else
+
+#if !DEVICE_USTICKER
+#error [NOT_SUPPORTED] UsTicker need to be enabled for this test.
+#else
+
 #include "mbed.h"
 #include "greentea-client/test_env.h"
 #include "unity.h"
 #include "utest.h"
 #include "rtos.h"
-
-#if defined(MBED_RTOS_SINGLE_THREAD)
-#error [NOT_SUPPORTED] test not supported
-#endif
-
-#if !DEVICE_USTICKER
-#error [NOT_SUPPORTED] test not supported
-#endif
 
 using namespace utest::v1;
 
@@ -62,7 +62,7 @@ bool manipulate_protected_zone(const int thread_delay)
     change_counter++;
     core_util_critical_section_exit();
 
-    Thread::wait(thread_delay);
+    ThisThread::sleep_for(thread_delay);
 
     core_util_critical_section_enter();
     changing_counter = false;
@@ -100,7 +100,7 @@ void test_multiple_threads(void)
 
     while (true) {
         // Thread 1 action
-        Thread::wait(t1_delay);
+        ThisThread::sleep_for(t1_delay);
         manipulate_protected_zone(t1_delay);
 
         core_util_critical_section_enter();
@@ -199,7 +199,7 @@ void test_dual_thread_lock_lock_thread(Mutex *mutex)
 
     bool stat = mutex->trylock_for(TEST_DELAY);
     TEST_ASSERT_EQUAL(false, stat);
-    TEST_ASSERT_UINT32_WITHIN(5000, TEST_DELAY*1000, timer.read_us());
+    TEST_ASSERT_UINT32_WITHIN(5000, TEST_DELAY * 1000, timer.read_us());
 }
 
 /** Test dual thread lock
@@ -308,3 +308,6 @@ int main()
 {
     return !Harness::run(specification);
 }
+
+#endif // !DEVICE_USTICKER
+#endif // defined(MBED_RTOS_SINGLE_THREAD) || !defined(MBED_CONF_RTOS_PRESENT)

@@ -17,30 +17,75 @@
 #ifndef ESP8266_INTERFACE_H
 #define ESP8266_INTERFACE_H
 
-#include "mbed.h"
-#include "ESP8266.h"
-
+#if DEVICE_SERIAL && DEVICE_INTERRUPTIN && defined(MBED_CONF_EVENTS_PRESENT) && defined(MBED_CONF_NSAPI_PRESENT) && defined(MBED_CONF_RTOS_API_PRESENT)
+#include "drivers/DigitalOut.h"
+#include "drivers/Timer.h"
+#include "ESP8266/ESP8266.h"
+#include "events/EventQueue.h"
+#include "events/mbed_shared_queues.h"
+#include "features/netsocket/NetworkInterface.h"
+#include "features/netsocket/NetworkStack.h"
+#include "features/netsocket/nsapi_types.h"
+#include "features/netsocket/SocketAddress.h"
+#include "features/netsocket/WiFiAccessPoint.h"
+#include "features/netsocket/WiFiInterface.h"
+#include "platform/Callback.h"
+#if MBED_CONF_RTOS_PRESENT
+#include "rtos/ConditionVariable.h"
+#endif
+#include "rtos/Mutex.h"
 
 #define ESP8266_SOCKET_COUNT 5
+
+#define ESP8266_INTERFACE_CONNECT_INTERVAL_MS (5000)
+#define ESP8266_INTERFACE_CONNECT_TIMEOUT_MS (2 * ESP8266_CONNECT_TIMEOUT + ESP8266_INTERFACE_CONNECT_INTERVAL_MS)
+
+#ifdef TARGET_FF_ARDUINO
+#ifndef MBED_CONF_ESP8266_TX
+#define MBED_CONF_ESP8266_TX D1
+#endif
+
+#ifndef MBED_CONF_ESP8266_RX
+#define MBED_CONF_ESP8266_RX D0
+#endif
+#endif /* TARGET_FF_ARDUINO */
+
+#ifndef MBED_CONF_ESP8266_COUNTRY_CODE
+#define MBED_CONF_ESP8266_COUNTRY_CODE "CN"
+#endif
+
+#ifndef MBED_CONF_ESP8266_CHANNEL_START
+#define MBED_CONF_ESP8266_CHANNEL_START 1
+#endif
+
+#ifndef MBED_CONF_ESP8266_CHANNELS
+#define MBED_CONF_ESP8266_CHANNELS 13
+#endif
 
 /** ESP8266Interface class
  *  Implementation of the NetworkStack for the ESP8266
  */
-class ESP8266Interface : public NetworkStack, public WiFiInterface
-{
+class ESP8266Interface : public NetworkStack, public WiFiInterface {
 public:
+#if defined MBED_CONF_ESP8266_TX && defined MBED_CONF_ESP8266_RX
     /**
      * @brief ESP8266Interface default constructor
      *        Will use values defined in mbed_lib.json
      */
     ESP8266Interface();
+#endif
 
     /** ESP8266Interface lifetime
      * @param tx        TX pin
      * @param rx        RX pin
      * @param debug     Enable debugging
      */
-    ESP8266Interface(PinName tx, PinName rx, bool debug = false);
+    ESP8266Interface(PinName tx, PinName rx, bool debug = false, PinName rts = NC, PinName cts = NC, PinName rst = NC, PinName pwr = NC);
+
+    /**
+     * @brief ESP8266Interface default destructor
+     */
+    virtual ~ESP8266Interface();
 
     /** Start the interface
      *
@@ -55,6 +100,9 @@ public:
      *
      *  Attempts to connect to a WiFi network.
      *
+     *  If interface is configured blocking it will timeout after up to
+     *  ESP8266_INTERFACE_CONNECT_TIMEOUT_MS + ESP8266_CONNECT_TIMEOUT ms.
+     *
      *  @param ssid      Name of the network to connect to
      *  @param pass      Security passphrase to connect to the network
      *  @param security  Type of encryption for connection (Default: NSAPI_SECURITY_NONE)
@@ -62,7 +110,7 @@ public:
      *  @return          0 on success, or error code on failure
      */
     virtual int connect(const char *ssid, const char *pass, nsapi_security_t security = NSAPI_SECURITY_NONE,
-                                  uint8_t channel = 0);
+                        uint8_t channel = 0);
 
     /** Set the WiFi network credentials
      *
@@ -91,6 +139,9 @@ public:
     /** Get the internally stored IP address
      *  @return             IP address of the interface or null if not yet connected
      */
+    virtual nsapi_error_t get_ip_address(SocketAddress *address);
+
+    MBED_DEPRECATED_SINCE("mbed-os-5.15", "String-based APIs are deprecated")
     virtual const char *get_ip_address();
 
     /** Get the internally stored MAC address
@@ -98,11 +149,14 @@ public:
      */
     virtual const char *get_mac_address();
 
-     /** Get the local gateway
-     *
-     *  @return         Null-terminated representation of the local gateway
-     *                  or null if no network mask has been recieved
-     */
+    /** Get the local gateway
+    *
+    *  @return         Null-terminated representation of the local gateway
+    *                  or null if no network mask has been recieved
+    */
+    virtual nsapi_error_t get_gateway(SocketAddress *address);
+
+    MBED_DEPRECATED_SINCE("mbed-os-5.15", "String-based APIs are deprecated")
     virtual const char *get_gateway();
 
     /** Get the local network mask
@@ -110,7 +164,17 @@ public:
      *  @return         Null-terminated representation of the local network mask
      *                  or null if no network mask has been recieved
      */
+    virtual nsapi_error_t get_netmask(SocketAddress *address);
+
+    MBED_DEPRECATED_SINCE("mbed-os-5.15", "String-based APIs are deprecated")
     virtual const char *get_netmask();
+
+    /** Get the network interface name
+     *
+     *  @return         Null-terminated representation of the network interface name
+     *                  or null if interface not exists
+     */
+    virtual char *get_interface_name(char *interface_name);
 
     /** Gets the current radio signal strength for active connection
      *
@@ -118,17 +182,37 @@ public:
      */
     virtual int8_t get_rssi();
 
+    /** Scan mode
+     */
+    enum scan_mode {
+        SCANMODE_ACTIVE, /*!< active mode */
+        SCANMODE_PASSIVE /*!< passive mode */
+    };
+
     /** Scan for available networks
      *
      * This function will block.
      *
-     * @param  ap       Pointer to allocated array to store discovered AP
-     * @param  count    Size of allocated @a res array, or 0 to only count available AP
-     * @param  timeout  Timeout in milliseconds; 0 for no timeout (Default: 0)
-     * @return          Number of entries in @a, or if @a count was 0 number of available networks, negative on error
-     *                  see @a nsapi_error
+     * @param  ap    Pointer to allocated array to store discovered AP
+     * @param  count Size of allocated @a res array, or 0 to only count available AP
+     * @return       Number of entries in @a, or if @a count was 0 number of available networks, negative on error
+     *               see @a nsapi_error
      */
     virtual int scan(WiFiAccessPoint *res, unsigned count);
+
+    /** Scan for available networks
+     *
+     * This function will block.
+     *
+     * @param  ap    Pointer to allocated array to store discovered AP
+     * @param  count Size of allocated @a res array, or 0 to only count available AP
+     * @param  t_max Scan time for each channel - 0-1500ms. If 0 - uses default value
+     * @param  t_min Minimum for each channel in active mode - 0-1500ms. If 0 - uses default value. Omit in passive mode
+     * @return       Number of entries in @a, or if @a count was 0 number of available networks, negative on error
+     *               see @a nsapi_error
+     */
+    virtual int scan(WiFiAccessPoint *res, unsigned count, scan_mode mode = SCANMODE_PASSIVE,
+                     unsigned t_max = 0, unsigned t_min = 0);
 
     /** Translates a hostname to an IP address with specific version
      *
@@ -153,39 +237,15 @@ public:
      */
     using NetworkInterface::add_dns_server;
 
-    /** Set socket options
-     *
-     *  The setsockopt allow an application to pass stack-specific hints
-     *  to the underlying stack. For unsupported options,
-     *  NSAPI_ERROR_UNSUPPORTED is returned and the socket is unmodified.
-     *
-     *  @param handle   Socket handle
-     *  @param level    Stack-specific protocol level
-     *  @param optname  Stack-specific option identifier
-     *  @param optval   Option value
-     *  @param optlen   Length of the option value
-     *  @return         0 on success, negative error code on failure
+    /** @copydoc NetworkStack::setsockopt
      */
     virtual nsapi_error_t setsockopt(nsapi_socket_t handle, int level,
-            int optname, const void *optval, unsigned optlen);
+                                     int optname, const void *optval, unsigned optlen);
 
-    /** Get socket options
-     *
-     *  getsockopt allows an application to retrieve stack-specific options
-     *  from the underlying stack using stack-specific level and option names,
-     *  or to request generic options using levels from nsapi_socket_level_t.
-     *
-     *  For unsupported options, NSAPI_ERROR_UNSUPPORTED is returned
-     *  and the socket is unmodified.
-     *
-     *  @param level    Stack-specific protocol level or nsapi_socket_level_t
-     *  @param optname  Level-specific option name
-     *  @param optval   Destination for option value
-     *  @param optlen   Length of the option value
-     *  @return         0 on success, negative error code on failure
+    /** @copydoc NetworkStack::getsockopt
      */
     virtual nsapi_error_t getsockopt(nsapi_socket_t handle, int level, int optname,
-            void *optval, unsigned *optlen);
+                                     void *optval, unsigned *optlen);
 
     /** Register callback for status reporting
      *
@@ -315,32 +375,133 @@ protected:
         return this;
     }
 
+    /** Set blocking status of connect() which by default should be blocking.
+     *
+     *  @param blocking Use true to make connect() blocking.
+     *  @return         NSAPI_ERROR_OK on success, negative error code on failure.
+     */
+    virtual nsapi_error_t set_blocking(bool blocking);
+
+    /** Set country code
+     *
+     *  @param track_ap      if TRUE, use country code used by the AP ESP is connected to,
+     *                       otherwise uses country_code always
+     *  @param country_code  ISO 3166-1 coded, 2 character alphanumeric country code assumed
+     *  @param len           Length of the country code
+     *  @param channel_start The channel number to start at
+     *  @param channel       Number of channels
+     *  @return              NSAPI_ERROR_OK on success, negative error code on failure.
+     */
+    nsapi_error_t set_country_code(bool track_ap, const char *country_code, int len, int channel_start, int channels);
+
 private:
+    // AT layer
+    ESP8266 _esp;
+    void refresh_conn_state_cb();
+
+    /** Status of software connection
+     */
+    typedef enum esp_connection_software_status {
+        IFACE_STATUS_DISCONNECTED = 0,
+        IFACE_STATUS_CONNECTING = 1,
+        IFACE_STATUS_CONNECTED = 2,
+        IFACE_STATUS_DISCONNECTING = 3
+    } esp_connection_software_status_t;
+
+    // HW reset pin
+    class ResetPin {
+    public:
+        ResetPin(PinName rst_pin);
+        void rst_assert();
+        void rst_deassert();
+        bool is_connected();
+    private:
+        mbed::DigitalOut  _rst_pin;
+    } _rst_pin;
+
+    // HW power pin
+    class PowerPin {
+    public:
+        PowerPin(PinName pwr_pin);
+        void power_on();
+        void power_off();
+        bool is_connected();
+    private:
+        mbed::DigitalOut  _pwr_pin;
+    } _pwr_pin;
+
+    /** Assert the reset and power pins
+     *  ESP8266 has two pins serving similar purpose and this function asserts them both
+     *  if they are configured in mbed_app.json.
+     */
+    void _power_off();
+
+    // Credentials
     static const int ESP8266_SSID_MAX_LENGTH = 32; /* 32 is what 802.11 defines as longest possible name */
+    char ap_ssid[ESP8266_SSID_MAX_LENGTH + 1]; /* The longest possible name; +1 for the \0 */
     static const int ESP8266_PASSPHRASE_MAX_LENGTH = 63; /* The longest allowed passphrase */
     static const int ESP8266_PASSPHRASE_MIN_LENGTH = 8; /* The shortest allowed passphrase */
+    char ap_pass[ESP8266_PASSPHRASE_MAX_LENGTH + 1]; /* The longest possible passphrase; +1 for the \0 */
+    nsapi_security_t _ap_sec;
 
-    ESP8266 _esp;
-    bool _ids[ESP8266_SOCKET_COUNT];
+    // Country code
+    struct _channel_info {
+        bool track_ap; // Set country code based on the AP ESP is connected to
+        char country_code[4]; // ISO 3166-1 coded, 2-3 character alphanumeric country code - +1 for the '\0' - assumed. Documentation doesn't tell.
+        int channel_start;
+        int channels;
+    };
+    struct _channel_info _ch_info;
+
+    bool _if_blocking; // NetworkInterface, blocking or not
+#if MBED_CONF_RTOS_PRESENT
+    rtos::ConditionVariable _if_connected;
+#endif
+
+    // connect status reporting
+    nsapi_error_t _conn_status_to_error();
+    mbed::Timer _conn_timer;
+
+    // Drivers's socket info
+    struct _sock_info {
+        bool open;
+        uint16_t sport;
+    };
+    struct _sock_info _sock_i[ESP8266_SOCKET_COUNT];
+
+    // Driver's state
     int _initialized;
-    int _started;
-
-    char ap_ssid[ESP8266_SSID_MAX_LENGTH + 1]; /* 32 is what 802.11 defines as longest possible name; +1 for the \0 */
-    nsapi_security_t ap_sec;
-    uint8_t ap_ch;
-    char ap_pass[ESP8266_PASSPHRASE_MAX_LENGTH + 1];
-    uint16_t _local_ports[ESP8266_SOCKET_COUNT];
-
-    bool _disable_default_softap();
-    void event();
+    nsapi_error_t _connect_retval;
+    nsapi_error_t _disconnect_retval;
     bool _get_firmware_ok();
     nsapi_error_t _init(void);
-    nsapi_error_t _startup(const int8_t wifi_mode);
+    nsapi_error_t _reset();
 
+    //sigio
     struct {
         void (*callback)(void *);
         void *data;
+        uint8_t deferred;
     } _cbs[ESP8266_SOCKET_COUNT];
-};
+    void event();
+    void event_deferred();
 
+    // Connection state reporting to application
+    nsapi_connection_status_t _conn_stat;
+    mbed::Callback<void(nsapi_event_t, intptr_t)> _conn_stat_cb;
+
+    // Background OOB processing
+    // Use global EventQueue
+    events::EventQueue *_global_event_queue;
+    int _oob_event_id;
+    int _connect_event_id;
+    int _disconnect_event_id;
+    void proc_oob_evnt();
+    void _connect_async();
+    void _disconnect_async();
+    rtos::Mutex _cmutex; // Protect asynchronous connection logic
+    esp_connection_software_status_t _software_conn_stat ;
+
+};
+#endif
 #endif

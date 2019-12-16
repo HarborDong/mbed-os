@@ -3,6 +3,7 @@
 /** @{*/
 /* mbed Microcontroller Library
  * Copyright (c) 2015 ARM Limited
+ * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -66,6 +67,7 @@ typedef struct {
     void (*fire_interrupt)(void);                 /**< Fire interrupt right-away */
     void (*free)(void);                           /**< Disable function */
     const ticker_info_t *(*get_info)(void);       /**< Return info about this ticker's implementation */
+    bool runs_in_deep_sleep;                      /**< Whether ticker operates in deep sleep */
 } ticker_interface_t;
 
 /** Ticker's event queue structure

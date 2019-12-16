@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2018, Arm Limited and affiliates.
+ * Copyright (c) 2013-2019, Arm Limited and affiliates.
  * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,7 +19,7 @@
 #define MLE_H_
 
 #include "nsconfig.h"
-#include "Core/include/address.h"
+#include "Core/include/ns_address_internal.h"
 #include "ns_list.h"
 
 struct buffer;
@@ -111,7 +111,7 @@ typedef enum mle_tlv_type_t_ {
     MLE_TYPE_OPERATIONAL_DATASET = 24,
     MLE_TYPE_PENDING_OPERATIONAL_DATASET = 25,
     MLE_TYPE_DISCOVERY = 26,
-	/* Thread low power TLVs*/
+    /* Thread low power TLVs*/
     MLE_TYPE_LINK_METRICS_QUERY = 87,
     MLE_TYPE_LINK_METRICS_MANAGEMENT = 88,
     MLE_TYPE_LINK_METRICS_REPORT = 89,

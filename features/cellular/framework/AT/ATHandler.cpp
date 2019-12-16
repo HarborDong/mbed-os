@@ -18,14 +18,16 @@
 #include <ctype.h>
 #include <stdio.h>
 #include <limits.h>
+#include <errno.h>
 #include "ATHandler.h"
 #include "mbed_poll.h"
 #include "FileHandle.h"
-#include "mbed_wait_api.h"
 #include "mbed_debug.h"
-#include "rtos/Thread.h"
+#include "rtos/ThisThread.h"
 #include "Kernel.h"
 #include "CellularUtil.h"
+#include "SingletonPtr.h"
+#include "ScopedLock.h"
 
 using namespace mbed;
 using namespace events;
@@ -35,6 +37,10 @@ using namespace mbed_cellular_util;
 
 // URCs should be handled fast, if you add debug traces within URC processing then you also need to increase this time
 #define PROCESS_URC_TIME 20
+
+// Suppress logging of very big packet payloads, maxlen is approximate due to write/read are cached
+#define DEBUG_MAXLEN 60
+#define DEBUG_END_MARK "..\r"
 
 const char *mbed::OK = "OK\r\n";
 const uint8_t OK_LENGTH = 4;
@@ -57,9 +63,110 @@ static const uint8_t map_3gpp_errors[][2] =  {
     { 146, 46 }, { 178, 65 }, { 179, 66 }, { 180, 48 }, { 181, 83 }, { 171, 49 },
 };
 
-ATHandler::ATHandler(FileHandle *fh, EventQueue &queue, int timeout, const char *output_delimiter, uint16_t send_delay) :
+ATHandler *ATHandler::_atHandlers = NULL;
+
+// each parser is associated with one filehandle (that is UART)
+ATHandler *ATHandler::get_instance(FileHandle *fileHandle, events::EventQueue &queue, uint32_t timeout,
+                                   const char *delimiter, uint16_t send_delay, bool debug_on)
+{
+    if (!fileHandle) {
+        return NULL;
+    }
+
+    singleton_lock();
+    ATHandler *atHandler = _atHandlers;
+    while (atHandler) {
+        if (atHandler->get_file_handle() == fileHandle) {
+            atHandler->inc_ref_count();
+            singleton_unlock();
+            return atHandler;
+        }
+        atHandler = atHandler->_nextATHandler;
+    }
+
+    atHandler = new ATHandler(fileHandle, queue, timeout, delimiter, send_delay);
+    if (debug_on) {
+        atHandler->set_debug(debug_on);
+    }
+    atHandler->_nextATHandler = _atHandlers;
+    _atHandlers = atHandler;
+
+    singleton_unlock();
+    return atHandler;
+}
+
+nsapi_error_t ATHandler::close()
+{
+    if (get_ref_count() == 0) {
+        return NSAPI_ERROR_PARAMETER;
+    }
+
+    singleton_lock();
+    dec_ref_count();
+    if (get_ref_count() == 0) {
+        // we can delete this at_handler
+        ATHandler *atHandler = _atHandlers;
+        ATHandler *prev = NULL;
+        while (atHandler) {
+            if (atHandler == this) {
+                if (prev == NULL) {
+                    _atHandlers = _atHandlers->_nextATHandler;
+                } else {
+                    prev->_nextATHandler = atHandler->_nextATHandler;
+                }
+                delete this;
+                break;
+            } else {
+                prev = atHandler;
+                atHandler = atHandler->_nextATHandler;
+            }
+        }
+    }
+    singleton_unlock();
+    return NSAPI_ERROR_OK;
+}
+
+void ATHandler::set_at_timeout_list(uint32_t timeout_milliseconds, bool default_timeout)
+{
+    ATHandler *atHandler = _atHandlers;
+    singleton_lock();
+    while (atHandler) {
+        atHandler->set_at_timeout(timeout_milliseconds, default_timeout);
+        atHandler = atHandler->_nextATHandler;
+    }
+    singleton_unlock();
+}
+
+void ATHandler::set_debug_list(bool debug_on)
+{
+    ATHandler *atHandler = _atHandlers;
+    singleton_lock();
+    while (atHandler) {
+        atHandler->set_debug(debug_on);
+        atHandler = atHandler->_nextATHandler;
+    }
+    singleton_unlock();
+}
+
+bool ATHandler::ok_to_proceed()
+{
+    if (_last_err != NSAPI_ERROR_OK) {
+        return false;
+    }
+
+    if (!_is_fh_usable) {
+        _last_err = NSAPI_ERROR_BUSY;
+        return false;
+    }
+    return true;
+}
+
+ATHandler::ATHandler(FileHandle *fh, EventQueue &queue, uint32_t timeout, const char *output_delimiter, uint16_t send_delay) :
     _nextATHandler(0),
-    _fileHandle(fh),
+#if defined AT_HANDLER_MUTEX && defined MBED_CONF_RTOS_PRESENT
+    _oobCv(_fileHandleMutex),
+#endif
+    _fileHandle(NULL), // filehandle is set by set_file_handle()
     _queue(queue),
     _last_err(NSAPI_ERROR_OK),
     _last_3gpp_error(0),
@@ -69,10 +176,8 @@ ATHandler::ATHandler(FileHandle *fh, EventQueue &queue, int timeout, const char 
     _previous_at_timeout(timeout),
     _at_send_delay(send_delay),
     _last_response_stop(0),
-    _fh_sigio_set(false),
-    _processing(false),
     _ref_count(1),
-    _is_fh_usable(true),
+    _is_fh_usable(false),
     _stop_tag(NULL),
     _delimiter(DEFAULT_DELIMITER),
     _prefix_matched(false),
@@ -81,17 +186,15 @@ ATHandler::ATHandler(FileHandle *fh, EventQueue &queue, int timeout, const char 
     _max_resp_length(MAX_RESP_LENGTH),
     _debug_on(MBED_CONF_CELLULAR_DEBUG_AT),
     _cmd_start(false),
-    _start_time(0)
+    _use_delimiter(true),
+    _start_time(0),
+    _event_id(0)
 {
     clear_error();
 
     if (output_delimiter) {
         _output_delimiter = new char[strlen(output_delimiter) + 1];
-        if (!_output_delimiter) {
-            MBED_ASSERT(0);
-        } else {
-            memcpy(_output_delimiter, output_delimiter, strlen(output_delimiter) + 1);
-        }
+        memcpy(_output_delimiter, output_delimiter, strlen(output_delimiter) + 1);
     } else {
         _output_delimiter = NULL;
     }
@@ -105,9 +208,7 @@ ATHandler::ATHandler(FileHandle *fh, EventQueue &queue, int timeout, const char 
     set_tag(&_info_stop, CRLF);
     set_tag(&_elem_stop, ")");
 
-    _fileHandle->set_blocking(false);
-
-    set_filehandle_sigio();
+    set_file_handle(fh);
 }
 
 void ATHandler::set_debug(bool debug_on)
@@ -115,8 +216,29 @@ void ATHandler::set_debug(bool debug_on)
     _debug_on = debug_on;
 }
 
+bool ATHandler::get_debug() const
+{
+    return _debug_on;
+}
+
 ATHandler::~ATHandler()
 {
+    ScopedLock <ATHandler> lock(*this);
+    set_file_handle(NULL);
+
+    if (_event_id != 0 && _queue.cancel(_event_id)) {
+        _event_id = 0;
+    }
+
+    while (_event_id != 0) {
+#if defined AT_HANDLER_MUTEX && defined MBED_CONF_RTOS_PRESENT
+        _oobCv.wait();
+#else
+        // Cancel will always work in a single threaded environment
+        MBED_ASSERT(false);
+#endif // AT_HANDLER_MUTEX
+    }
+
     while (_oobs) {
         struct oob_t *oob = _oobs;
         _oobs = oob->next;
@@ -149,49 +271,65 @@ FileHandle *ATHandler::get_file_handle()
 
 void ATHandler::set_file_handle(FileHandle *fh)
 {
+    ScopedLock<ATHandler> lock(*this);
+    if (_fileHandle) {
+        set_is_filehandle_usable(false);
+    }
     _fileHandle = fh;
+    if (_fileHandle) {
+        set_is_filehandle_usable(true);
+    }
 }
 
 void ATHandler::set_is_filehandle_usable(bool usable)
 {
-    _is_fh_usable = usable;
+    ScopedLock<ATHandler> lock(*this);
+    if (_fileHandle) {
+        if (usable) {
+            _fileHandle->set_blocking(false);
+            _fileHandle->sigio(Callback<void()>(this, &ATHandler::event));
+        } else {
+            _fileHandle->set_blocking(true); // set back to default state
+            _fileHandle->sigio(NULL);
+        }
+        _is_fh_usable = usable;
+    }
 }
 
-nsapi_error_t ATHandler::set_urc_handler(const char *prefix, mbed::Callback<void()> callback)
+void ATHandler::set_urc_handler(const char *prefix, Callback<void()> callback)
 {
-    if (find_urc_handler(prefix, callback)) {
+    if (!callback) {
+        remove_urc_handler(prefix);
+        return;
+    }
+
+    if (find_urc_handler(prefix)) {
         tr_warn("URC already added with prefix: %s", prefix);
-        return NSAPI_ERROR_OK;
+        return;
     }
 
     struct oob_t *oob = new struct oob_t;
-    if (!oob) {
-        return NSAPI_ERROR_NO_MEMORY;
-    } else {
-        size_t prefix_len = strlen(prefix);
-        if (prefix_len > _oob_string_max_length) {
-            _oob_string_max_length = prefix_len;
-            if (_oob_string_max_length > _max_resp_length) {
-                _max_resp_length = _oob_string_max_length;
-            }
+    size_t prefix_len = strlen(prefix);
+    if (prefix_len > _oob_string_max_length) {
+        _oob_string_max_length = prefix_len;
+        if (_oob_string_max_length > _max_resp_length) {
+            _max_resp_length = _oob_string_max_length;
         }
-
-        oob->prefix = prefix;
-        oob->prefix_len = prefix_len;
-        oob->cb = callback;
-        oob->next = _oobs;
-        _oobs = oob;
     }
 
-    return NSAPI_ERROR_OK;
+    oob->prefix = prefix;
+    oob->prefix_len = prefix_len;
+    oob->cb = callback;
+    oob->next = _oobs;
+    _oobs = oob;
 }
 
-void ATHandler::remove_urc_handler(const char *prefix, mbed::Callback<void()> callback)
+void ATHandler::remove_urc_handler(const char *prefix)
 {
     struct oob_t *current = _oobs;
     struct oob_t *prev = NULL;
     while (current) {
-        if (strcmp(prefix, current->prefix) == 0 && current->cb == callback) {
+        if (strcmp(prefix, current->prefix) == 0) {
             if (prev) {
                 prev->next = current->next;
             } else {
@@ -205,11 +343,11 @@ void ATHandler::remove_urc_handler(const char *prefix, mbed::Callback<void()> ca
     }
 }
 
-bool ATHandler::find_urc_handler(const char *prefix, mbed::Callback<void()> callback)
+bool ATHandler::find_urc_handler(const char *prefix)
 {
     struct oob_t *oob = _oobs;
     while (oob) {
-        if (strcmp(prefix, oob->prefix) == 0 && oob->cb == callback) {
+        if (strcmp(prefix, oob->prefix) == 0) {
             return true;
         }
         oob = oob->next;
@@ -220,32 +358,28 @@ bool ATHandler::find_urc_handler(const char *prefix, mbed::Callback<void()> call
 
 void ATHandler::event()
 {
-    // _processing must be set before filehandle write/read to avoid repetitive sigio events
-    if (!_processing) {
-        _processing = true;
-        (void) _queue.call(Callback<void(void)>(this, &ATHandler::process_oob));
+    if (_event_id == 0) {
+        _event_id = _queue.call(callback(this, &ATHandler::process_oob));
     }
 }
 
 void ATHandler::lock()
 {
-#ifdef AT_HANDLER_MUTEX
+#if defined AT_HANDLER_MUTEX && defined MBED_CONF_RTOS_PRESENT
     _fileHandleMutex.lock();
 #endif
-    _processing = true;
     clear_error();
     _start_time = rtos::Kernel::get_ms_count();
 }
 
 void ATHandler::unlock()
 {
-    _processing = false;
-#ifdef AT_HANDLER_MUTEX
+    if (_is_fh_usable && (_fileHandle->readable() || (_recv_pos < _recv_len))) {
+        _event_id = _queue.call(callback(this, &ATHandler::process_oob));
+    }
+#if defined AT_HANDLER_MUTEX && defined MBED_CONF_RTOS_PRESENT
     _fileHandleMutex.unlock();
 #endif
-    if (_fileHandle->readable() || (_recv_pos < _recv_len)) {
-        (void) _queue.call(Callback<void(void)>(this, &ATHandler::process_oob));
-    }
 }
 
 nsapi_error_t ATHandler::unlock_return_error()
@@ -257,6 +391,7 @@ nsapi_error_t ATHandler::unlock_return_error()
 
 void ATHandler::set_at_timeout(uint32_t timeout_milliseconds, bool default_timeout)
 {
+    lock();
     if (default_timeout) {
         _previous_at_timeout = timeout_milliseconds;
         _at_timeout = timeout_milliseconds;
@@ -264,55 +399,58 @@ void ATHandler::set_at_timeout(uint32_t timeout_milliseconds, bool default_timeo
         _previous_at_timeout = _at_timeout;
         _at_timeout = timeout_milliseconds;
     }
+    unlock();
 }
 
 void ATHandler::restore_at_timeout()
 {
+    lock();
     if (_previous_at_timeout != _at_timeout) {
         _at_timeout = _previous_at_timeout;
     }
+    unlock();
 }
 
 void ATHandler::process_oob()
 {
+    ScopedLock<ATHandler> lock(*this);
     if (!_is_fh_usable) {
         tr_debug("process_oob, filehandle is not usable, return...");
+        _event_id = 0;
+#if defined AT_HANDLER_MUTEX && defined MBED_CONF_RTOS_PRESENT
+        _oobCv.notify_all();
+#endif
         return;
     }
-    lock();
-    tr_debug("process_oob readable=%d, pos=%u, len=%u", _fileHandle->readable(), _recv_pos,  _recv_len);
     if (_fileHandle->readable() || (_recv_pos < _recv_len)) {
+        tr_debug("AT OoB readable %d, len %u", _fileHandle->readable(), _recv_len - _recv_pos);
         _current_scope = NotSet;
         uint32_t timeout = _at_timeout;
-        _at_timeout = PROCESS_URC_TIME;
         while (true) {
+            _at_timeout = timeout;
             if (match_urc()) {
                 if (!(_fileHandle->readable() || (_recv_pos < _recv_len))) {
                     break; // we have nothing to read anymore
                 }
             } else if (mem_str(_recv_buff, _recv_len, CRLF, CRLF_LENGTH)) { // If no match found, look for CRLF and consume everything up to CRLF
+                _at_timeout = PROCESS_URC_TIME;
                 consume_to_tag(CRLF, true);
             } else {
+                _at_timeout = PROCESS_URC_TIME;
                 if (!fill_buffer()) {
                     reset_buffer(); // consume anything that could not be handled
                     break;
                 }
-                _start_time = rtos::Kernel::get_ms_count();
             }
+            _start_time = rtos::Kernel::get_ms_count();
         }
         _at_timeout = timeout;
+        tr_debug("AT OoB done");
     }
-    tr_debug("process_oob exit");
-    unlock();
-}
-
-void ATHandler::set_filehandle_sigio()
-{
-    if (_fh_sigio_set) {
-        return;
-    }
-    _fileHandle->sigio(mbed::Callback<void()>(this, &ATHandler::event));
-    _fh_sigio_set = true;
+    _event_id = 0;
+#if defined AT_HANDLER_MUTEX && defined MBED_CONF_RTOS_PRESENT
+    _oobCv.notify_all();
+#endif
 }
 
 void ATHandler::reset_buffer()
@@ -354,6 +492,7 @@ bool ATHandler::fill_buffer(bool wait_for_timeout)
     // Reset buffer when full
     if (sizeof(_recv_buff) == _recv_len) {
         tr_error("AT overflow");
+        debug_print(_recv_buff, _recv_len, AT_ERR);
         reset_buffer();
     }
 
@@ -364,7 +503,7 @@ bool ATHandler::fill_buffer(bool wait_for_timeout)
     if (count > 0 && (fhs.revents & POLLIN)) {
         ssize_t len = _fileHandle->read(_recv_buff + _recv_len, sizeof(_recv_buff) - _recv_len);
         if (len > 0) {
-            debug_print(_recv_buff + _recv_len, len);
+            debug_print(_recv_buff + _recv_len, len, AT_RX);
             _recv_len += len;
             return true;
         }
@@ -389,7 +528,7 @@ int ATHandler::get_char()
 
 void ATHandler::skip_param(uint32_t count)
 {
-    if (_last_err || !_stop_tag || _stop_tag->found) {
+    if (!ok_to_proceed() || !_stop_tag || _stop_tag->found) {
         return;
     }
 
@@ -410,6 +549,9 @@ void ATHandler::skip_param(uint32_t count)
                 }
             } else if (match_pos) {
                 match_pos = 0;
+                if (c == _stop_tag->tag[match_pos]) {
+                    match_pos++;
+                }
             }
         }
     }
@@ -418,7 +560,7 @@ void ATHandler::skip_param(uint32_t count)
 
 void ATHandler::skip_param(ssize_t len, uint32_t count)
 {
-    if (_last_err || !_stop_tag || _stop_tag->found) {
+    if (!ok_to_proceed() || !_stop_tag || _stop_tag->found) {
         return;
     }
 
@@ -438,36 +580,37 @@ void ATHandler::skip_param(ssize_t len, uint32_t count)
 
 ssize_t ATHandler::read_bytes(uint8_t *buf, size_t len)
 {
-    if (_last_err) {
+    if (!ok_to_proceed()) {
         return -1;
     }
 
+    bool debug_on = _debug_on;
     size_t read_len = 0;
     for (; read_len < len; read_len++) {
         int c = get_char();
         if (c == -1) {
             set_error(NSAPI_ERROR_DEVICE_ERROR);
+            _debug_on = debug_on;
             return -1;
         }
         buf[read_len] = c;
+        if (_debug_on && read_len >= DEBUG_MAXLEN) {
+            _debug_on = false;
+        }
     }
+    _debug_on = debug_on;
     return read_len;
 }
 
 ssize_t ATHandler::read_string(char *buf, size_t size, bool read_even_stop_tag)
 {
-    if (_last_err || !_stop_tag || (_stop_tag->found && read_even_stop_tag == false)) {
+    if (!ok_to_proceed() || !_stop_tag || (_stop_tag->found && read_even_stop_tag == false)) {
         return -1;
     }
 
-    consume_char('\"');
-
-    if (_last_err) {
-        return -1;
-    }
-
-    size_t len = 0;
+    unsigned int len = 0;
     size_t match_pos = 0;
+    bool delimiter_found = false;
 
     for (; len < (size - 1 + match_pos); len++) {
         int c = get_char();
@@ -476,6 +619,7 @@ ssize_t ATHandler::read_string(char *buf, size_t size, bool read_even_stop_tag)
             return -1;
         } else if (c == _delimiter) {
             buf[len] = '\0';
+            delimiter_found = true;
             break;
         } else if (c == '\"') {
             match_pos = 0;
@@ -492,6 +636,9 @@ ssize_t ATHandler::read_string(char *buf, size_t size, bool read_even_stop_tag)
             }
         } else if (match_pos) {
             match_pos = 0;
+            if (c == _stop_tag->tag[match_pos]) {
+                match_pos++;
+            }
         }
 
         buf[len] = c;
@@ -501,12 +648,32 @@ ssize_t ATHandler::read_string(char *buf, size_t size, bool read_even_stop_tag)
         buf[len] = '\0';
     }
 
+    // Consume to delimiter or stop_tag
+    if (!delimiter_found && !_stop_tag->found) {
+        match_pos = 0;
+        while (1) {
+            int c = get_char();
+            if (c == -1) {
+                set_error(NSAPI_ERROR_DEVICE_ERROR);
+                break;
+            } else if (c == _delimiter) {
+                break;
+            } else if (_stop_tag->len && c == _stop_tag->tag[match_pos]) {
+                match_pos++;
+                if (match_pos == _stop_tag->len) {
+                    _stop_tag->found = true;
+                    break;
+                }
+            }
+        }
+    }
+
     return len;
 }
 
 ssize_t ATHandler::read_hex_string(char *buf, size_t size)
 {
-    if (_last_err || !_stop_tag || _stop_tag->found) {
+    if (!ok_to_proceed() || !_stop_tag ||  _stop_tag->found) {
         return -1;
     }
 
@@ -522,8 +689,13 @@ ssize_t ATHandler::read_hex_string(char *buf, size_t size)
     size_t buf_idx = 0;
     char hexbuf[2];
 
+    bool debug_on = _debug_on;
     for (; read_idx < size * 2 + match_pos; read_idx++) {
         int c = get_char();
+
+        if (_debug_on && read_idx >= DEBUG_MAXLEN) {
+            _debug_on = false;
+        }
 
         if (match_pos) {
             buf_idx++;
@@ -551,6 +723,9 @@ ssize_t ATHandler::read_hex_string(char *buf, size_t size)
             }
         } else if (match_pos) {
             match_pos = 0;
+            if (c == _stop_tag->tag[match_pos]) {
+                match_pos++;
+            }
         }
 
         if (match_pos) {
@@ -558,10 +733,11 @@ ssize_t ATHandler::read_hex_string(char *buf, size_t size)
         } else {
             hexbuf[read_idx % 2] = c;
             if (read_idx % 2 == 1) {
-                hex_str_to_char_str(hexbuf, 2, buf + buf_idx);
+                hex_to_char(hexbuf, *(buf + buf_idx));
             }
         }
     }
+    _debug_on = debug_on;
 
     if (read_idx && (read_idx == size * 2 + match_pos)) {
         buf_idx++;
@@ -572,18 +748,27 @@ ssize_t ATHandler::read_hex_string(char *buf, size_t size)
 
 int32_t ATHandler::read_int()
 {
-    if (_last_err || !_stop_tag || _stop_tag->found) {
+    if (!ok_to_proceed() || !_stop_tag ||  _stop_tag->found) {
         return -1;
     }
 
     char buff[BUFF_SIZE];
-    char *first_no_digit;
-
-    if (read_string(buff, (size_t)sizeof(buff)) == 0) {
+    if (read_string(buff, sizeof(buff)) == 0) {
         return -1;
     }
 
-    return std::strtol(buff, &first_no_digit, 10);
+    errno = 0;
+    long result = std::strtol(buff, NULL, 10);
+    if ((result == LONG_MIN || result == LONG_MAX) && errno == ERANGE) {
+        return -1; // overflow/underflow
+    }
+    if (result < 0) {
+        return -1; // negative values are unsupported
+    }
+    if (*buff == '\0') {
+        return -1; // empty string
+    }
+    return (int32_t) result;
 }
 
 void ATHandler::set_delimiter(char delimiter)
@@ -596,11 +781,17 @@ void ATHandler::set_default_delimiter()
     _delimiter = DEFAULT_DELIMITER;
 }
 
+void ATHandler::use_delimiter(bool use_delimiter)
+{
+    _use_delimiter = use_delimiter;
+}
+
 void ATHandler::set_tag(tag_t *tag_dst, const char *tag_seq)
 {
     if (tag_seq) {
         size_t tag_len = strlen(tag_seq);
-        set_string(tag_dst->tag, tag_seq, tag_len);
+        memcpy(tag_dst->tag, tag_seq, tag_len);
+        tag_dst->tag[tag_len] = '\0';
         tag_dst->len = tag_len;
         tag_dst->found = false;
     } else {
@@ -717,13 +908,13 @@ device_err_t ATHandler::get_last_device_error() const
 
 void ATHandler::set_error(nsapi_error_t err)
 {
+    if (err != NSAPI_ERROR_OK) {
+        tr_debug("AT error %d", err);
+    }
     if (_last_err == NSAPI_ERROR_OK) {
         _last_err = err;
     }
 
-    if (_last_err != err) {
-        tr_warn("AT error code changed from %d to %d!", _last_err, err);
-    }
 }
 
 int ATHandler::get_3gpp_error()
@@ -744,7 +935,7 @@ void ATHandler::set_3gpp_error(int err, DeviceErrorType error_type)
         for (size_t i = 0; i < sizeof(map_3gpp_errors) / sizeof(map_3gpp_errors[0]); i++) {
             if (map_3gpp_errors[i][0] == err) {
                 _last_3gpp_error = map_3gpp_errors[i][1];
-                tr_debug("AT3GPP error code %d", get_3gpp_error());
+                tr_error("AT3GPP error code %d", get_3gpp_error());
                 break;
             }
         }
@@ -761,7 +952,7 @@ void ATHandler::at_error(bool error_code_expected, DeviceErrorType error_type)
             set_3gpp_error(err, error_type);
             _last_at_err.errCode = err;
             _last_at_err.errType = error_type;
-            tr_error("AT error code %ld", err);
+            tr_warn("AT error code %ld", err);
         } else {
             tr_warn("ATHandler ERROR reading failed");
         }
@@ -778,7 +969,7 @@ void ATHandler::resp(const char *prefix, bool check_urc)
 
     while (!get_last_error()) {
 
-        match(CRLF, CRLF_LENGTH);
+        (void)match(CRLF, CRLF_LENGTH);
 
         if (match(OK, OK_LENGTH)) {
             set_scope(RespType);
@@ -791,26 +982,28 @@ void ATHandler::resp(const char *prefix, bool check_urc)
             return;
         }
 
-        if (prefix && match(prefix, strlen(prefix))) {
+        if (prefix && strlen(prefix) && match(prefix, strlen(prefix))) {
             _prefix_matched = true;
             return;
         }
 
         if (check_urc && match_urc()) {
             _urc_matched = true;
+            clear_error();
+            continue;
         }
 
         // If no match found, look for CRLF and consume everything up to and including CRLF
         if (mem_str(_recv_buff, _recv_len, CRLF, CRLF_LENGTH)) {
             // If no prefix, return on CRLF - means data to read
-            if (!prefix) {
+            if (!prefix || (prefix && !strlen(prefix))) {
                 return;
             }
             consume_to_tag(CRLF, true);
         } else {
             // If no prefix, no CRLF and no more chance to match for OK, ERROR or URC(since max resp length is already in buffer)
             // return so data could be read
-            if (!prefix && ((_recv_len - _recv_pos) >= _max_resp_length)) {
+            if ((!prefix || (prefix && !strlen(prefix))) && ((_recv_len - _recv_pos) >= _max_resp_length)) {
                 return;
             }
             if (!fill_buffer()) {
@@ -826,10 +1019,11 @@ void ATHandler::resp(const char *prefix, bool check_urc)
 
 void ATHandler::resp_start(const char *prefix, bool stop)
 {
-    if (_last_err) {
+    if (!ok_to_proceed()) {
         return;
     }
 
+    set_scope(NotSet);
     // Try get as much data as possible
     rewind_buffer();
     (void)fill_buffer(false);
@@ -851,7 +1045,7 @@ void ATHandler::resp_start(const char *prefix, bool stop)
 // check urc because of error as urc
 bool ATHandler::info_resp()
 {
-    if (_last_err || _resp_stop.found) {
+    if (!ok_to_proceed() || _resp_stop.found) {
         return false;
     }
 
@@ -881,7 +1075,7 @@ bool ATHandler::info_resp()
 
 bool ATHandler::info_elem(char start_tag)
 {
-    if (_last_err) {
+    if (!ok_to_proceed()) {
         return false;
     }
 
@@ -921,25 +1115,31 @@ bool ATHandler::consume_char(char ch)
 bool ATHandler::consume_to_tag(const char *tag, bool consume_tag)
 {
     size_t match_pos = 0;
+    size_t tag_length = strlen(tag);
 
     while (true) {
         int c = get_char();
         if (c == -1) {
-            break;
-        } else if (c == tag[match_pos]) {
+            tr_debug("consume_to_tag not found");
+            return false;
+        }
+        if (c == tag[match_pos]) {
             match_pos++;
-            if (match_pos == strlen(tag)) {
-                if (!consume_tag) {
-                    _recv_pos -= strlen(tag);
-                }
-                return true;
-            }
-        } else if (match_pos) {
+        } else if (match_pos != 0) {
             match_pos = 0;
+            if (c == tag[match_pos]) {
+                match_pos++;
+            }
+        }
+        if (match_pos == tag_length) {
+            break;
         }
     }
-    tr_debug("consume_to_tag not found");
-    return false;
+
+    if (!consume_tag) {
+        _recv_pos -= tag_length;
+    }
+    return true;
 }
 
 bool ATHandler::consume_to_stop_tag()
@@ -948,11 +1148,16 @@ bool ATHandler::consume_to_stop_tag()
         return true;
     }
 
+    if (!_is_fh_usable) {
+        _last_err = NSAPI_ERROR_BUSY;
+        return true;
+    }
+
     if (consume_to_tag((const char *)_stop_tag->tag, true)) {
         return true;
     }
 
-    tr_warn("AT stop tag not found");
+    tr_debug("AT stop tag not found");
     set_error(NSAPI_ERROR_DEVICE_ERROR);
     return false;
 }
@@ -961,21 +1166,52 @@ bool ATHandler::consume_to_stop_tag()
 
 void ATHandler::resp_stop()
 {
-    // Do not return on error so that we can consume whatever there is in the buffer
+    if (_is_fh_usable) {
+        // Do not return on error so that we can consume whatever there is in the buffer
 
-    if (_current_scope == ElemType) {
-        information_response_element_stop();
-        set_scope(InfoType);
+        if (_current_scope == ElemType) {
+            information_response_element_stop();
+            set_scope(InfoType);
+        }
+
+        if (_current_scope == InfoType) {
+            information_response_stop();
+        }
+
+        // Go for response stop_tag
+        if (_stop_tag && !_stop_tag->found && !_error_found) {
+            // Check for URC for every new line
+            while (!get_last_error()) {
+
+                if (match(_stop_tag->tag, _stop_tag->len)) {
+                    break;
+                }
+
+                if (match_urc()) {
+                    continue;
+                }
+
+                // If no URC nor stop_tag found, look for CRLF and consume everything up to and including CRLF
+                if (mem_str(_recv_buff, _recv_len, CRLF, CRLF_LENGTH)) {
+                    consume_to_tag(CRLF, true);
+                    // If stop tag is CRLF we have to stop reading/consuming the buffer
+                    if (!strncmp(CRLF, _stop_tag->tag, _stop_tag->len)) {
+                        break;
+                    }
+                    // If no URC nor CRLF nor stop_tag -> fill buffer
+                } else {
+                    if (!fill_buffer()) {
+                        // if we don't get any match and no data within timeout, set an error to indicate need for recovery
+                        set_error(NSAPI_ERROR_DEVICE_ERROR);
+                    }
+                }
+            }
+        }
+    } else {
+        _last_err = NSAPI_ERROR_BUSY;
     }
 
-    if (_current_scope == InfoType) {
-        information_response_stop();
-    }
-
-    // Go for response stop_tag
-    if (consume_to_stop_tag()) {
-        set_scope(NotSet);
-    }
+    set_scope(NotSet);
 
     // Restore stop tag to OK
     set_tag(&_resp_stop, OK);
@@ -1004,15 +1240,9 @@ ATHandler::ScopeType ATHandler::get_scope()
     return _current_scope;
 }
 
-void ATHandler::set_string(char *dest, const char *src, size_t src_len)
-{
-    memcpy(dest, src, src_len);
-    dest[src_len] = '\0';
-}
-
 const char *ATHandler::mem_str(const char *dest, size_t dest_len, const char *src, size_t src_len)
 {
-    if (dest_len > src_len) {
+    if (dest_len >= src_len) {
         for (size_t i = 0; i < dest_len - src_len + 1; ++i) {
             if (memcmp(dest + i, src, src_len) == 0) {
                 return dest + i;
@@ -1024,18 +1254,143 @@ const char *ATHandler::mem_str(const char *dest, size_t dest_len, const char *sr
 
 void ATHandler::cmd_start(const char *cmd)
 {
-
-    if (_at_send_delay) {
-        rtos::Thread::wait_until(_last_response_stop + _at_send_delay);
+    if (!ok_to_proceed()) {
+        return;
     }
 
-    if (_last_err != NSAPI_ERROR_OK) {
-        return;
+    if (_at_send_delay) {
+        rtos::ThisThread::sleep_until(_last_response_stop + _at_send_delay);
     }
 
     (void)write(cmd, strlen(cmd));
 
     _cmd_start = true;
+}
+
+void ATHandler::handle_args(const char *format, std::va_list list)
+{
+    while (*format != '\0') {
+        if (*format == 'd') {
+            int32_t i = va_arg(list, int32_t);
+            write_int(i);
+        } else if (*format == 's') {
+            char *str = (char *)va_arg(list, char *);
+            write_string(str);
+        } else if (*format == 'b') {
+            uint8_t *bytes = va_arg(list, uint8_t *);
+            int size = va_arg(list, int);
+            write_bytes(bytes, size);
+        }
+        ++format;
+    }
+}
+
+void ATHandler::handle_start(const char *cmd, const char *cmd_chr)
+{
+    int len = 0;
+    memcpy(_cmd_buffer, "AT", 2);
+    len += 2;
+    int cmd_char_len = 0;
+    if (cmd_chr) {
+        cmd_char_len = strlen(cmd_chr);
+    }
+    MBED_ASSERT((3 + strlen(cmd) + cmd_char_len) < BUFF_SIZE);
+
+    memcpy(_cmd_buffer + len, cmd, strlen(cmd));
+    len += strlen(cmd);
+
+    if (cmd_char_len) {
+        memcpy(_cmd_buffer + len, cmd_chr, cmd_char_len);
+        len += cmd_char_len;
+    }
+    _cmd_buffer[len] = '\0';
+
+    const bool temp_state = get_debug();
+    set_debug(true);
+
+    cmd_start(_cmd_buffer);
+
+    set_debug(temp_state);
+}
+
+void ATHandler::cmd_start_stop(const char *cmd, const char *cmd_chr, const char *format, ...)
+{
+    handle_start(cmd, cmd_chr);
+
+    va_list list;
+    va_start(list, format);
+    handle_args(format, list);
+    va_end(list);
+
+    cmd_stop();
+}
+
+nsapi_error_t ATHandler::at_cmd_str(const char *cmd, const char *cmd_chr, char *resp_buf, size_t buf_size, const char *format, ...)
+{
+    MBED_ASSERT(strlen(cmd) < BUFF_SIZE);
+    lock();
+
+    handle_start(cmd, cmd_chr);
+
+    va_list list;
+    va_start(list, format);
+    handle_args(format, list);
+    va_end(list);
+
+    cmd_stop();
+
+    if (strlen(cmd) > 0) {
+        memcpy(_cmd_buffer, cmd, strlen(cmd));
+        _cmd_buffer[strlen(cmd)] = ':';
+        _cmd_buffer[strlen(cmd) + 1] = '\0';
+        resp_start(_cmd_buffer);
+    } else {
+        resp_start();
+    }
+
+    resp_buf[0] = '\0';
+    read_string(resp_buf, buf_size);
+    resp_stop();
+    return unlock_return_error();
+}
+
+nsapi_error_t ATHandler::at_cmd_int(const char *cmd, const char *cmd_chr, int &resp, const char *format, ...)
+{
+    lock();
+
+    handle_start(cmd, cmd_chr);
+
+    va_list list;
+    va_start(list, format);
+    handle_args(format, list);
+    va_end(list);
+
+    cmd_stop();
+    char temp[16];
+    size_t len = strlen(cmd);
+    memcpy(temp, cmd, len);
+    temp[len] = ':';
+    temp[len + 1] = '\0';
+    resp_start(temp);
+
+    resp = read_int();
+    resp_stop();
+    return unlock_return_error();
+}
+
+nsapi_error_t ATHandler::at_cmd_discard(const char *cmd, const char *cmd_chr, const char *format, ...)
+{
+    lock();
+
+    handle_start(cmd, cmd_chr);
+
+    va_list list;
+    va_start(list, format);
+    handle_args(format, list);
+    va_end(list);
+
+    cmd_stop_read_resp();
+    return unlock_return_error();
 }
 
 void ATHandler::write_int(int32_t param)
@@ -1048,7 +1403,7 @@ void ATHandler::write_int(int32_t param)
     // write the integer subparameter
     const int32_t str_len = 12;
     char number_string[str_len];
-    int32_t result = sprintf(number_string, "%ld", param);
+    int32_t result = sprintf(number_string, "%" PRIi32, param);
     if (result > 0 && result < str_len) {
         (void)write(number_string, strlen(number_string));
     }
@@ -1076,16 +1431,23 @@ void ATHandler::write_string(const char *param, bool useQuotations)
 
 void ATHandler::cmd_stop()
 {
-    if (_last_err != NSAPI_ERROR_OK) {
+    if (!ok_to_proceed()) {
         return;
     }
     // Finish with CR
     (void)write(_output_delimiter, strlen(_output_delimiter));
 }
 
+void ATHandler::cmd_stop_read_resp()
+{
+    cmd_stop();
+    resp_start();
+    resp_stop();
+}
+
 size_t ATHandler::write_bytes(const uint8_t *data, size_t len)
 {
-    if (_last_err != NSAPI_ERROR_OK) {
+    if (!ok_to_proceed()) {
         return 0;
     }
 
@@ -1098,20 +1460,30 @@ size_t ATHandler::write(const void *data, size_t len)
     fhs.fh = _fileHandle;
     fhs.events = POLLOUT;
     size_t write_len = 0;
+    bool debug_on = _debug_on;
     for (; write_len < len;) {
         int count = poll(&fhs, 1, poll_timeout());
         if (count <= 0 || !(fhs.revents & POLLOUT)) {
             set_error(NSAPI_ERROR_DEVICE_ERROR);
+            _debug_on = debug_on;
             return 0;
         }
         ssize_t ret = _fileHandle->write((uint8_t *)data + write_len, len - write_len);
         if (ret < 0) {
             set_error(NSAPI_ERROR_DEVICE_ERROR);
+            _debug_on = debug_on;
             return 0;
         }
-        debug_print((char *)data + write_len, ret);
+        if (_debug_on && write_len < DEBUG_MAXLEN) {
+            if (write_len + ret < DEBUG_MAXLEN) {
+                debug_print((char *)data + write_len, ret, AT_TX);
+            } else {
+                _debug_on = false;
+            }
+        }
         write_len += (size_t)ret;
     }
+    _debug_on = debug_on;
 
     return write_len;
 }
@@ -1119,15 +1491,18 @@ size_t ATHandler::write(const void *data, size_t len)
 // do common checks before sending subparameters
 bool ATHandler::check_cmd_send()
 {
-    if (_last_err != NSAPI_ERROR_OK) {
+    if (!ok_to_proceed()) {
         return false;
     }
+
+
+    // Don't write delimiter if flag was set so
 
     // Don't write delimiter if this is the first subparameter
     if (_cmd_start) {
         _cmd_start = false;
     } else {
-        if (write(&_delimiter, 1) != 1) {
+        if (_use_delimiter && write(&_delimiter, 1) != 1) {
             // writing of delimiter failed, return. write() already have set the _last_err
             return false;
         }
@@ -1138,35 +1513,119 @@ bool ATHandler::check_cmd_send()
 
 void ATHandler::flush()
 {
+    if (!_is_fh_usable) {
+        _last_err = NSAPI_ERROR_BUSY;
+        return;
+    }
+    tr_debug("AT flush");
     reset_buffer();
     while (fill_buffer(false)) {
         reset_buffer();
     }
 }
 
-void ATHandler::debug_print(char *p, int len)
+void ATHandler::debug_print(const char *p, int len, ATType type)
 {
 #if MBED_CONF_CELLULAR_DEBUG_AT
     if (_debug_on) {
-#if MBED_CONF_MBED_TRACE_ENABLE
-        mbed_cellular_trace::mutex_wait();
-#endif
-        for (ssize_t i = 0; i < len; i++) {
-            char c = *p++;
-            if (!isprint(c)) {
-                if (c == '\r') {
-                    debug("\n");
+        const int buf_size = len * 4 + 1; // x4 -> reserve space for extra characters, +1 -> terminating null
+        char *buffer = new char [buf_size];
+        if (buffer) {
+            memset(buffer, 0, buf_size);
+
+            char *pbuf = buffer;
+            for (ssize_t i = 0; i < len; i++) {
+                const char c = *p++;
+                if (isprint(c)) {
+                    *pbuf++ = c;
+                } else if (c == '\r') {
+                    sprintf(pbuf, "<cr>");
+                    pbuf += 4;
                 } else if (c == '\n') {
+                    sprintf(pbuf, "<ln>");
+                    pbuf += 4;
                 } else {
-                    debug("[%d]", c);
+                    sprintf(pbuf, "<%02X>", c);
+                    pbuf += 4;
                 }
-            } else {
-                debug("%c", c);
             }
+            MBED_ASSERT((int)(pbuf - buffer) <= buf_size); // Check for buffer overflow
+
+            if (type == AT_RX) {
+                tr_info("AT RX (%2d): %s", len, buffer);
+            } else if (type == AT_TX) {
+                tr_info("AT TX (%2d): %s", len, buffer);
+            } else {
+                tr_info("AT ERR (%2d): %s", len, buffer);
+            }
+
+            delete [] buffer;
+        } else {
+            tr_error("AT trace unable to allocate buffer!");
         }
-#if MBED_CONF_MBED_TRACE_ENABLE
-        mbed_cellular_trace::mutex_release();
-#endif
     }
 #endif // MBED_CONF_CELLULAR_DEBUG_AT
 }
+
+bool ATHandler::sync(int timeout_ms)
+{
+    if (!_is_fh_usable) {
+        _last_err = NSAPI_ERROR_BUSY;
+        return false;
+    }
+    tr_debug("AT sync");
+    lock();
+    uint32_t timeout = _at_timeout;
+    _at_timeout = timeout_ms;
+    // poll for 10 seconds
+    for (int i = 0; i < 10; i++) {
+        // For sync use an AT command that is supported by all modems and likely not used frequently,
+        // especially a common response like OK could be response to previous request.
+        clear_error();
+        _start_time = rtos::Kernel::get_ms_count();
+        cmd_start("AT+CMEE?");
+        cmd_stop();
+        resp_start();
+        set_stop_tag("+CMEE:");
+        consume_to_stop_tag();
+        set_stop_tag(OK);
+        consume_to_stop_tag();
+        if (!_last_err) {
+            _at_timeout = timeout;
+            unlock();
+            return true;
+        }
+    }
+    tr_error("AT sync failed");
+    _at_timeout = timeout;
+    unlock();
+    return false;
+}
+
+void ATHandler::set_send_delay(uint16_t send_delay)
+{
+    _at_send_delay = send_delay;
+}
+
+void ATHandler::write_hex_string(char *str, size_t size)
+{
+    // do common checks before sending subparameter
+    if (check_cmd_send() == false) {
+        return;
+    }
+
+    (void) write("\"", 1);
+    char hexbuf[2];
+    for (size_t i = 0; i < size; i++) {
+        hexbuf[0] = hex_values[((str[i]) >> 4) & 0x0F];
+        hexbuf[1] = hex_values[(str[i]) & 0x0F];
+        write(hexbuf, 2);
+    }
+    (void) write("\"", 1);
+}
+
+void ATHandler::set_baud(int baud_rate)
+{
+    static_cast<UARTSerial *>(_fileHandle)->set_baud(baud_rate);
+}
+

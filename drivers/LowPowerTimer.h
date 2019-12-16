@@ -1,5 +1,6 @@
 /* mbed Microcontroller Library
  * Copyright (c) 2015 ARM Limited
+ * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,17 +21,20 @@
 #include "drivers/Timer.h"
 #include "platform/NonCopyable.h"
 
-#if defined (DEVICE_LPTICKER) || defined(DOXYGEN_ONLY)
+#if DEVICE_LPTICKER || defined(DOXYGEN_ONLY)
 
 #include "hal/lp_ticker_api.h"
 
 namespace mbed {
-/** \addtogroup drivers */
+/**
+ * \defgroup drivers_LowPowerTimer LowPowerTimer class
+ * \ingroup drivers-public-api-ticker
+ * @{
+ */
 
 /** Low power timer
  *
  * @note Synchronization level: Interrupt safe
- * @ingroup drivers
  */
 class LowPowerTimer : public Timer, private NonCopyable<LowPowerTimer> {
 
@@ -40,6 +44,8 @@ public:
     }
 
 };
+
+/** @}*/
 
 } // namespace mbed
 

@@ -24,23 +24,21 @@
 #define LWIP_TIMEVAL_PRIVATE 0
 #include <sys/time.h>
 #endif
+#include "nsapi_types.h"
+#include "mbed_retarget.h"
 
-// Operating System 
+// Operating System
 #define NO_SYS                      0
 
-#if MBED_CONF_LWIP_IPV4_ENABLED
-#define LWIP_IPV4                   1
-#else
-#define LWIP_IPV4                   0
-#endif
-#if MBED_CONF_LWIP_IPV6_ENABLED
-#define LWIP_IPV6                   1
-#else
-#define LWIP_IPV6                   0
-#endif
 #if !MBED_CONF_LWIP_IPV4_ENABLED && !MBED_CONF_LWIP_IPV6_ENABLED
 #error "Either IPv4 or IPv6 must be enabled."
 #endif
+
+#define LWIP_IPV4                   MBED_CONF_LWIP_IPV4_ENABLED
+
+#define LWIP_IPV6                   MBED_CONF_LWIP_IPV6_ENABLED
+
+#define LWIP_PROVIDE_ERRNO 0
 
 // On dual stack configuration how long to wait for both or preferred stack
 // addresses before completing bring up.
@@ -57,18 +55,19 @@
 #define BOTH_ADDR_TIMEOUT           0
 #endif
 
-#define DHCP_TIMEOUT                60
+
+#define DHCP_TIMEOUT                MBED_CONF_LWIP_DHCP_TIMEOUT
+
+#define LINK_TIMEOUT                60
 
 #define PREF_IPV4                   1
 #define PREF_IPV6                   2
 
-#if MBED_CONF_LWIP_IP_VER_PREF == 4
-#define IP_VERSION_PREF             PREF_IPV4
-#endif
 #if MBED_CONF_LWIP_IP_VER_PREF == 6
 #define IP_VERSION_PREF             PREF_IPV6
-#endif
-#ifndef IP_VERSION_PREF
+#elif MBED_CONF_LWIP_IP_VER_PREF == 4
+#define IP_VERSION_PREF             PREF_IPV4
+#else
 #error "Either IPv4 or IPv6 must be preferred."
 #endif
 
@@ -82,21 +81,17 @@
 
 #define SYS_LIGHTWEIGHT_PROT        1
 
-#define LWIP_RAW                    0
+#define LWIP_RAW                    MBED_CONF_LWIP_RAW_SOCKET_ENABLED
 
-#define TCPIP_MBOX_SIZE             8
-#define DEFAULT_TCP_RECVMBOX_SIZE   8
+#define MEMP_NUM_TCPIP_MSG_INPKT    MBED_CONF_LWIP_MEMP_NUM_TCPIP_MSG_INPKT
+#define TCPIP_MBOX_SIZE             MBED_CONF_LWIP_TCPIP_MBOX_SIZE
+#define DEFAULT_TCP_RECVMBOX_SIZE   MBED_CONF_LWIP_DEFAULT_TCP_RECVMBOX_SIZE
 #define DEFAULT_UDP_RECVMBOX_SIZE   8
 #define DEFAULT_RAW_RECVMBOX_SIZE   8
 #define DEFAULT_ACCEPTMBOX_SIZE     8
 
 // Thread stacks use 8-byte alignment
 #define LWIP_ALIGN_UP(pos, align) ((pos) % (align) ? (pos) +  ((align) - (pos) % (align)) : (pos))
-
-// Thread stack size for lwip tcpip thread
-#ifndef MBED_CONF_LWIP_TCPIP_THREAD_STACKSIZE
-#define MBED_CONF_LWIP_TCPIP_THREAD_STACKSIZE      1200
-#endif
 
 #ifdef LWIP_DEBUG
 // For LWIP debug, double the stack
@@ -108,24 +103,13 @@
 #define TCPIP_THREAD_STACKSIZE      LWIP_ALIGN_UP(MBED_CONF_LWIP_TCPIP_THREAD_STACKSIZE, 8)
 #endif
 
-#define TCPIP_THREAD_PRIO           (osPriorityNormal)
-
-// Thread stack size for lwip system threads
-#ifndef MBED_CONF_LWIP_DEFAULT_THREAD_STACKSIZE
-#define MBED_CONF_LWIP_DEFAULT_THREAD_STACKSIZE    512
-#endif
-
-// Thread stack size for private PPP thread
-#ifndef MBED_CONF_LWIP_PPP_THREAD_STACKSIZE
-#define MBED_CONF_LWIP_PPP_THREAD_STACKSIZE    768
-#endif
+// Thread priority (osPriorityNormal by default)
+#define TCPIP_THREAD_PRIO           (MBED_CONF_LWIP_TCPIP_THREAD_PRIORITY)
 
 #ifdef LWIP_DEBUG
 #define DEFAULT_THREAD_STACKSIZE    LWIP_ALIGN_UP(MBED_CONF_LWIP_DEFAULT_THREAD_STACKSIZE*2, 8)
-#define PPP_THREAD_STACK_SIZE       LWIP_ALIGN_UP(MBED_CONF_LWIP_PPP_THREAD_STACKSIZE*2, 8)
 #else
 #define DEFAULT_THREAD_STACKSIZE    LWIP_ALIGN_UP(MBED_CONF_LWIP_DEFAULT_THREAD_STACKSIZE, 8)
-#define PPP_THREAD_STACK_SIZE       LWIP_ALIGN_UP(MBED_CONF_LWIP_PPP_THREAD_STACKSIZE, 8)
 #endif
 
 #define MEMP_NUM_SYS_TIMEOUT        16
@@ -140,35 +124,24 @@
 #define LWIP_RAM_HEAP_POINTER       lwip_ram_heap
 
 // Number of simultaneously queued TCP segments.
-#ifdef MBED_CONF_LWIP_MEMP_NUM_TCP_SEG
 #define MEMP_NUM_TCP_SEG            MBED_CONF_LWIP_MEMP_NUM_TCP_SEG
-#endif
 
 // TCP Maximum segment size.
-#ifdef MBED_CONF_LWIP_TCP_MSS
 #define TCP_MSS                     MBED_CONF_LWIP_TCP_MSS
-#endif
 
 // TCP sender buffer space (bytes).
-#ifdef MBED_CONF_LWIP_TCP_SND_BUF
 #define TCP_SND_BUF                 MBED_CONF_LWIP_TCP_SND_BUF
-#endif
 
 // TCP sender buffer space (bytes).
-#ifdef MBED_CONF_LWIP_TCP_WND
 #define TCP_WND                     MBED_CONF_LWIP_TCP_WND
-#endif
+
+#define TCP_MAXRTX                  MBED_CONF_LWIP_TCP_MAXRTX
+
+#define TCP_SYNMAXRTX               MBED_CONF_LWIP_TCP_SYNMAXRTX
 
 // Number of pool pbufs.
 // Each requires 684 bytes of RAM (if MSS=536 and PBUF_POOL_BUFSIZE defaulting to be based on MSS)
-#ifdef MBED_CONF_LWIP_PBUF_POOL_SIZE
-#undef PBUF_POOL_SIZE
 #define PBUF_POOL_SIZE              MBED_CONF_LWIP_PBUF_POOL_SIZE
-#else
-#ifndef PBUF_POOL_SIZE
-#define PBUF_POOL_SIZE              5
-#endif
-#endif
 
 #ifdef MBED_CONF_LWIP_PBUF_POOL_BUFSIZE
 #undef PBUF_POOL_BUFSIZE
@@ -183,58 +156,38 @@
 #endif
 #endif
 
-#ifdef MBED_CONF_LWIP_MEM_SIZE
-#undef MEM_SIZE
 #define MEM_SIZE                    MBED_CONF_LWIP_MEM_SIZE
-#endif
 
 // One tcp_pcb_listen is needed for each TCPServer.
 // Each requires 72 bytes of RAM.
-#ifdef MBED_CONF_LWIP_TCP_SERVER_MAX
 #define MEMP_NUM_TCP_PCB_LISTEN     MBED_CONF_LWIP_TCP_SERVER_MAX
-#else
-#define MEMP_NUM_TCP_PCB_LISTEN     4
-#endif
 
 // One is tcp_pcb needed for each TCPSocket.
 // Each requires 196 bytes of RAM.
-#ifdef MBED_CONF_LWIP_TCP_SOCKET_MAX
 #define MEMP_NUM_TCP_PCB            MBED_CONF_LWIP_TCP_SOCKET_MAX
-#else
-#define MEMP_NUM_TCP_PCB            4
-#endif
 
 // One udp_pcb is needed for each UDPSocket.
 // Each requires 84 bytes of RAM (total rounded to multiple of 512).
-#ifdef MBED_CONF_LWIP_UDP_SOCKET_MAX
 #define MEMP_NUM_UDP_PCB            MBED_CONF_LWIP_UDP_SOCKET_MAX
-#else
-#define MEMP_NUM_UDP_PCB            4
-#endif
 
 // Number of non-pool pbufs.
 // Each requires 92 bytes of RAM.
-#ifndef MEMP_NUM_PBUF
-#define MEMP_NUM_PBUF               8
-#endif
+#define MEMP_NUM_PBUF               MBED_CONF_LWIP_NUM_PBUF
 
 // Each netbuf requires 64 bytes of RAM.
-#ifndef MEMP_NUM_NETBUF
-#define MEMP_NUM_NETBUF             8
-#endif
+#define MEMP_NUM_NETBUF             MBED_CONF_LWIP_NUM_NETBUF
 
 // One netconn is needed for each UDPSocket, TCPSocket or TCPServer.
 // Each requires 236 bytes of RAM (total rounded to multiple of 512).
-#ifdef MBED_CONF_LWIP_SOCKET_MAX
 #define MEMP_NUM_NETCONN            MBED_CONF_LWIP_SOCKET_MAX
-#else
-#define MEMP_NUM_NETCONN            4
-#endif
 
 #if MBED_CONF_LWIP_TCP_ENABLED
 #define LWIP_TCP                    1
 #define TCP_OVERSIZE                0
 #define LWIP_TCP_KEEPALIVE          1
+
+#define TCP_CLOSE_TIMEOUT            MBED_CONF_LWIP_TCP_CLOSE_TIMEOUT
+
 #else
 #define LWIP_TCP                    0
 #endif
@@ -296,11 +249,6 @@
 #define DNS_DEBUG                   LWIP_DBG_OFF
 #define IP6_DEBUG                   LWIP_DBG_OFF
 
-#if MBED_CONF_LWIP_ENABLE_PPP_TRACE
-#define PPP_DEBUG                   LWIP_DBG_ON
-#else
-#define PPP_DEBUG                   LWIP_DBG_OFF
-#endif //MBED_CONF_LWIP_ENABLE_PPP_TRACE
 #define ETHARP_DEBUG                LWIP_DBG_OFF
 #define UDP_LPC_EMAC                LWIP_DBG_OFF
 
@@ -331,35 +279,50 @@
 #define LWIP_ETHERNET               0
 #endif // MBED_CONF_LWIP_ETHERNET_ENABLED
 
+#if MBED_CONF_LWIP_L3IP_ENABLED
+#define LWIP_L3IP                   1
+#else
+#define LWIP_L3IP                   0
+#endif
+
+//Maximum size of network interface name
+#define INTERFACE_NAME_MAX_SIZE NSAPI_INTERFACE_NAME_MAX_SIZE
 // Note generic macro name used rather than MBED_CONF_LWIP_PPP_ENABLED
 // to allow users like PPPCellularInterface to detect that nsapi_ppp.h is available.
-#if NSAPI_PPP_AVAILABLE
-#define PPP_SUPPORT                    1
-#if MBED_CONF_LWIP_IPV6_ENABLED
-#define PPP_IPV6_SUPPORT               1
-// Disable DAD for PPP
-#define LWIP_IPV6_DUP_DETECT_ATTEMPTS  0
+
+// Enable PPP for now either from lwIP PPP configuration (obsolete) or from PPP service configuration
+#if MBED_CONF_PPP_ENABLED || MBED_CONF_LWIP_PPP_ENABLED
+
+#define PPP_SUPPORT                      1
+
+#if MBED_CONF_PPP_IPV4_ENABLED || MBED_CONF_LWIP_IPV4_ENABLED
+#define LWIP 0x11991199
+#if (MBED_CONF_NSAPI_DEFAULT_STACK == LWIP) && !MBED_CONF_LWIP_IPV4_ENABLED
+#error LWIP: IPv4 PPP enabled but not IPv4
 #endif
-#define CHAP_SUPPORT                   1
-#define PPP_INPROC_IRQ_SAFE            1
-// Save RAM
-#define PAP_SUPPORT                    0
-#define VJ_SUPPORT                     0
-#define PRINTPKT_SUPPORT               0
+#undef LWIP
+#define PPP_IPV4_SUPPORT                 1
+#endif
 
-// Broadcast
-#define IP_SOF_BROADCAST               0
-#define IP_SOF_BROADCAST_RECV          0
+#if MBED_CONF_PPP_IPV6_ENABLED || MBED_CONF_LWIP_IPV6_ENABLED
+#define LWIP 0x11991199
+#if (MBED_CONF_NSAPI_DEFAULT_STACK == LWIP) && !MBED_CONF_LWIP_IPV6_ENABLED
+#error LWIP: IPv6 PPP enabled but not IPv6
+#endif
+#undef LWIP
+#define PPP_IPV6_SUPPORT                 1
+// Later to be dynamic for use for multiple interfaces
+#define LWIP_IPV6_DUP_DETECT_ATTEMPTS    0
+#endif
 
-#define MAXNAMELEN                     64     /* max length of hostname or name for auth */
-#define MAXSECRETLEN                   64
-#endif // NSAPI_PPP_AVAILABLE
+#endif
 
 // Make sure we default these to off, so
 // LWIP doesn't default to on
 #ifndef LWIP_ARP
 #define LWIP_ARP                    0
 #endif
+
 // Checksum-on-copy disabled due to https://savannah.nongnu.org/bugs/?50914
 #define LWIP_CHECKSUM_ON_COPY       0
 
@@ -374,8 +337,9 @@
 #include "lwip_tcp_isn.h"
 #define LWIP_HOOK_TCP_ISN lwip_hook_tcp_isn
 #ifdef MBEDTLS_MD5_C
-#include "mbedtls/inc/mbedtls/md5.h"
-#define LWIP_USE_EXTERNAL_MBEDTLS 1
+#define LWIP_USE_EXTERNAL_MBEDTLS       1
+#else
+#define LWIP_USE_EXTERNAL_MBEDTLS       0
 #endif
 
 #endif /* LWIPOPTS_H_ */

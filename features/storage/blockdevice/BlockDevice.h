@@ -14,11 +14,15 @@
  * limitations under the License.
  */
 
+/** \addtogroup storage */
+/** @{*/
+
 #ifndef MBED_BLOCK_DEVICE_H
 #define MBED_BLOCK_DEVICE_H
 
 #include <stdint.h>
 
+namespace mbed {
 
 /** Enum of standard error codes
  *
@@ -40,18 +44,17 @@ typedef uint64_t bd_size_t;
 
 /** A hardware device capable of writing and reading blocks
  */
-class BlockDevice
-{
+class BlockDevice {
 public:
 
     /** Return the default block device
      *
-     * Returns the default BlockDevice base on configuration json.
+     * Returns the default block device based on the configuration JSON.
      * Use the components in target.json or application config to change
      * the default block device.
      *
      * An application can override all target settings by implementing
-     * BlockDevice::get_default_instance() themselves - the default
+     * BlockDevice::get_default_instance() - the default
      * definition is weak, and calls get_target_default_instance().
     */
     static BlockDevice *get_default_instance();
@@ -87,8 +90,8 @@ public:
      *
      *  @param buffer   Buffer to write blocks to
      *  @param addr     Address of block to begin reading from
-     *  @param size     Size to read in bytes, must be a multiple of read block size
-     *  @return         0 on success, negative error code on failure
+     *  @param size     Size to read in bytes, must be a multiple of the read block size
+     *  @return         0 on success or a negative error code on failure
      */
     virtual int read(void *buffer, bd_addr_t addr, bd_size_t size) = 0;
 
@@ -100,8 +103,8 @@ public:
      *
      *  @param buffer   Buffer of data to write to blocks
      *  @param addr     Address of block to begin writing to
-     *  @param size     Size to write in bytes, must be a multiple of program block size
-     *  @return         0 on success, negative error code on failure
+     *  @param size     Size to write in bytes, must be a multiple of the program block size
+     *  @return         0 on success or a negative error code on failure
      */
     virtual int program(const void *buffer, bd_addr_t addr, bd_size_t size) = 0;
 
@@ -111,8 +114,8 @@ public:
      *  unless get_erase_value returns a non-negative byte value
      *
      *  @param addr     Address of block to begin erasing
-     *  @param size     Size to erase in bytes, must be a multiple of erase block size
-     *  @return         0 on success, negative error code on failure
+     *  @param size     Size to erase in bytes, must be a multiple of the erase block size
+     *  @return         0 on success or a negative error code on failure
      */
     virtual int erase(bd_addr_t addr, bd_size_t size)
     {
@@ -127,8 +130,8 @@ public:
      *  the device is not busy.
      *
      *  @param addr     Address of block to mark as unused
-     *  @param size     Size to mark as unused in bytes, must be a multiple of erase block size
-     *  @return         0 on success, negative error code on failure
+     *  @param size     Size to mark as unused in bytes, must be a multiple of the erase block size
+     *  @return         0 on success or a negative error code on failure
      */
     virtual int trim(bd_addr_t addr, bd_size_t size)
     {
@@ -176,7 +179,7 @@ public:
      *  that value can be programmed without another erase.
      *
      *  @return         The value of storage when erased, or -1 if you can't
-     *                  rely on the value of erased storage
+     *                  rely on the value of the erased storage
      */
     virtual int get_erase_value() const
     {
@@ -195,12 +198,12 @@ public:
      *  @param size     Size to read in bytes
      *  @return         True if read is valid for underlying block device
      */
-    bool is_valid_read(bd_addr_t addr, bd_size_t size) const
+    virtual bool is_valid_read(bd_addr_t addr, bd_size_t size) const
     {
         return (
-            addr % get_read_size() == 0 &&
-            size % get_read_size() == 0 &&
-            addr + size <= this->size());
+                   addr % get_read_size() == 0 &&
+                   size % get_read_size() == 0 &&
+                   addr + size <= this->size());
     }
 
     /** Convenience function for checking block program validity
@@ -209,12 +212,12 @@ public:
      *  @param size     Size to write in bytes
      *  @return         True if program is valid for underlying block device
      */
-    bool is_valid_program(bd_addr_t addr, bd_size_t size) const
+    virtual bool is_valid_program(bd_addr_t addr, bd_size_t size) const
     {
         return (
-            addr % get_program_size() == 0 &&
-            size % get_program_size() == 0 &&
-            addr + size <= this->size());
+                   addr % get_program_size() == 0 &&
+                   size % get_program_size() == 0 &&
+                   addr + size <= this->size());
     }
 
     /** Convenience function for checking block erase validity
@@ -223,14 +226,32 @@ public:
      *  @param size     Size to erase in bytes
      *  @return         True if erase is valid for underlying block device
      */
-    bool is_valid_erase(bd_addr_t addr, bd_size_t size) const
+    virtual bool is_valid_erase(bd_addr_t addr, bd_size_t size) const
     {
         return (
-            addr % get_erase_size() == 0 &&
-            size % get_erase_size() == 0 &&
-            addr + size <= this->size());
+                   addr % get_erase_size(addr) == 0 &&
+                   (addr + size) % get_erase_size(addr + size - 1) == 0 &&
+                   addr + size <= this->size());
     }
+
+    /** Get the BlockDevice class type.
+     *
+     *  @return         A string represent the BlockDevice class type.
+     */
+    virtual const char *get_type() const = 0;
 };
 
+} // namespace mbed
+
+// Added "using" for backwards compatibility
+#ifndef MBED_NO_GLOBAL_USING_DIRECTIVE
+using mbed::BlockDevice;
+using mbed::bd_addr_t;
+using mbed::bd_size_t;
+using mbed::BD_ERROR_OK;
+using mbed::BD_ERROR_DEVICE_ERROR;
+#endif
 
 #endif
+
+/** @}*/

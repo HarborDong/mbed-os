@@ -13,19 +13,19 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+#if defined(MBED_RTOS_SINGLE_THREAD) || !defined(MBED_CONF_RTOS_PRESENT)
+#error [NOT_SUPPORTED] Queue test cases require RTOS with multithread to run
+#else
+
+#if !DEVICE_USTICKER
+#error [NOT_SUPPORTED] UsTicker need to be enabled for this test.
+#else
+
 #include "mbed.h"
 #include "greentea-client/test_env.h"
 #include "unity.h"
 #include "utest.h"
 #include "rtos.h"
-
-#if defined(MBED_RTOS_SINGLE_THREAD)
-#error [NOT_SUPPORTED] test not supported
-#endif
-
-#if !DEVICE_USTICKER
-#error [NOT_SUPPORTED] test not supported
-#endif
 
 using namespace utest::v1;
 
@@ -37,7 +37,7 @@ using namespace utest::v1;
 template <uint32_t ms>
 void thread_put_uint_msg(Queue<uint32_t, 1> *q)
 {
-    Thread::wait(ms);
+    ThisThread::sleep_for(ms);
     osStatus stat = q->put((uint32_t *) TEST_UINT_MSG);
     TEST_ASSERT_EQUAL(osOK, stat);
 }
@@ -45,7 +45,7 @@ void thread_put_uint_msg(Queue<uint32_t, 1> *q)
 template <uint32_t ms, uint32_t val>
 void thread_get_uint_msg(Queue<uint32_t, 1> *q)
 {
-    Thread::wait(ms);
+    ThisThread::sleep_for(ms);
     osEvent evt = q->get();
     TEST_ASSERT_EQUAL(osEventMessage, evt.status);
     TEST_ASSERT_EQUAL(val, evt.value.v);
@@ -348,3 +348,6 @@ int main()
 {
     return !Harness::run(specification);
 }
+
+#endif // !DEVICE_USTICKER
+#endif // defined(MBED_RTOS_SINGLE_THREAD) || !defined(MBED_CONF_RTOS_PRESENT)

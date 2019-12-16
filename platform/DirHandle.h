@@ -1,5 +1,6 @@
 /* mbed Microcontroller Library
- * Copyright (c) 2006-2013 ARM Limited
+ * Copyright (c) 2006-2019 ARM Limited
+ * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,12 +18,11 @@
 #define MBED_DIRHANDLE_H
 
 #include <stdint.h>
-#include "platform/platform.h"
-#include "platform/FileHandle.h"
+#include "platform/mbed_toolchain.h"
 #include "platform/NonCopyable.h"
 
 namespace mbed {
-/** \addtogroup platform */
+/** \addtogroup platform-public-api */
 /** @{*/
 /**
  * \defgroup platform_DirHandle DirHandle functions
@@ -30,18 +30,24 @@ namespace mbed {
  */
 
 
-/** Represents a directory stream. Objects of this type are returned
- *  by an opendir function. The core functions are read and seek,
+/** Represents a directory stream. An opendir function returns
+ *  objects of this type. The core functions are read and seek,
  *  but only a subset needs to be provided.
  *
- *  If a FileSystemLike class defines the opendir method, then the
- *  directories of an object of that type can be accessed by
- *  DIR *d = opendir("/example/directory") (or opendir("/example")
- *  to open the root of the filesystem), and then using readdir(d) etc.
+ *  If a FileSystemLike class defines the opendir method, then you
+ *  can access the directories of an object of that type by either:
+ *  @code
+ *  DIR *d  = opendir("/example/directory");
+ *  @endcode
+ *  or
+ *  @code
+ *  DIR *d = opendir("/example");
+ *  @endcode
+ *  to open the root of the file system.
  *
  *  The root directory is considered to contain all FileHandle and
- *  FileSystem objects, so the DIR* returned by opendir("/") will
- *  reflect this.
+ *  FileSystem objects, so the DIR pointer returned by opendir("/")
+ *  reflects this.
  *
  *  @note to create a directory, @see Dir
  *  @note Synchronization level: Set by subclass
@@ -113,7 +119,7 @@ public:
         return close();
     };
 
-    /** Return the directory entry at the current position, and
+    /** Returns the directory entry at the current position, and
      *  advances the position to the next entry.
      *
      * @returns

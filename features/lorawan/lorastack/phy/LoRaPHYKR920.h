@@ -32,6 +32,8 @@
 #ifndef MBED_OS_LORAPHY_KR920_H_
 #define MBED_OS_LORAPHY_KR920_H_
 
+#if !(DOXYGEN_ONLY)
+
 #include "LoRaPHY.h"
 
 /*!
@@ -56,14 +58,14 @@ public:
 
     virtual bool verify_frequency_for_band(uint32_t freq, uint8_t band) const;
 
-    virtual bool tx_config(tx_config_params_t* config, int8_t* tx_power,
-                           lorawan_time_t* tx_toa);
+    virtual bool tx_config(tx_config_params_t *config, int8_t *tx_power,
+                           lorawan_time_t *tx_toa);
 
-    virtual lorawan_status_t set_next_channel(channel_selection_params_t* params, uint8_t* channel,
-                                              lorawan_time_t* time,
-                                              lorawan_time_t* aggregate_timeOff);
+    virtual lorawan_status_t set_next_channel(channel_selection_params_t *params, uint8_t *channel,
+                                              lorawan_time_t *time,
+                                              lorawan_time_t *aggregate_timeOff);
 
-    virtual void set_tx_cont_mode(cw_mode_params_t* continuousWave,
+    virtual void set_tx_cont_mode(cw_mode_params_t *continuousWave,
                                   uint32_t frequency = 0);
 
 
@@ -92,5 +94,6 @@ private:
     uint16_t default_channel_mask[KR920_CHANNEL_MASK_SIZE];
 };
 
+#endif /* DOXYGEN_ONLY */
 #endif // MBED_OS_LORAPHY_KR920_H_
 

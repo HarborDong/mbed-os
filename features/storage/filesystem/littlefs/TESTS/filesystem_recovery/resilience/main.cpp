@@ -26,7 +26,7 @@ using namespace utest::v1;
 // test configuration
 #ifndef MBED_TEST_SIM_BLOCKDEVICE
 #error [NOT_SUPPORTED] Simulation block device required for resilience tests
-#endif
+#else
 
 #ifndef MBED_TEST_SIM_BLOCKDEVICE_DECL
 #define MBED_TEST_SIM_BLOCKDEVICE_DECL MBED_TEST_SIM_BLOCKDEVICE bd(MBED_TEST_BLOCK_COUNT*512, 1, 1, 512)
@@ -68,7 +68,7 @@ void test_resilience()
     bd_size_t block_size = bd.get_erase_size();
     bd.deinit();
 
-    SlicingBlockDevice slice(&bd, 0, MBED_TEST_BLOCK_COUNT*block_size);
+    SlicingBlockDevice slice(&bd, 0, MBED_TEST_BLOCK_COUNT * block_size);
 
     // Setup the test
     setup_atomic_operations(&slice, true);
@@ -102,3 +102,5 @@ int main()
 {
     Harness::run(specification);
 }
+
+#endif // MBED_TEST_SIM_BLOCKDEVICE

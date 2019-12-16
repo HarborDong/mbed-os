@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012, 2014-2018, Arm Limited and affiliates.
+ * Copyright (c) 2012, 2014-2019, Arm Limited and affiliates.
  * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -24,7 +24,7 @@
 #define IPV6_ROUTING_TABLE_H_
 
 #include "ns_list.h"
-#include "Core/include/address.h"
+#include "Core/include/ns_address_internal.h"
 
 /* Address Resolution and Neighbour Unreachablity Detection constants from
  * RFC 4861, updated by RFC 7048.
@@ -73,7 +73,7 @@ typedef enum ipv6_route_src {
     ROUTE_RPL_DAO,      /* Explicitly advertised in DAO, Storing mode */
     ROUTE_RPL_DAO_SR,   /* Explicitly advertised in DAO, Root Source Routes in Non-Storing mode */
     ROUTE_RPL_SRH,      /* Not in routing table - used in buffers to represent on-link inferred from SRH */
-    ROUTE_RPL_ROOT,     /* Implicit route to DODAG route */
+    ROUTE_RPL_ROOT,     /* Implicit route to DODAG root */
     ROUTE_RPL_INSTANCE, /* Implicit instance-specific default upward route (not for general search) */
     ROUTE_RPL_FWD_ERROR, /* Not in routing table - used in buffers to represent Forwarding-Error bounce */
     ROUTE_MULTICAST,    /* Not in routing table - used to represent multicast interface selection */
@@ -119,10 +119,12 @@ typedef struct ipv6_neighbour_cache {
     bool                                    send_addr_reg : 1;
     bool                                    recv_addr_reg : 1;
     bool                                    send_nud_probes : 1;
+    bool                                    probe_avoided_routers : 1;
     bool                                    recv_ns_aro : 1;
     bool                                    recv_na_aro : 1;
     bool                                    use_eui64_as_slla_in_aro : 1;
-    bool                                    omit_aro_success : 1;
+    bool                                    omit_na_aro_success : 1;
+    bool                                    omit_na : 1; // except for ARO successes which have a separate flag
     int8_t                                  interface_id;
     uint8_t                                 max_ll_len;
     uint8_t                                 gc_timer;
@@ -159,6 +161,7 @@ extern bool ipv6_neighbour_addr_is_probably_reachable(ipv6_neighbour_cache_t *ca
 extern bool ipv6_neighbour_ll_addr_match(const ipv6_neighbour_t *entry, addrtype_t ll_type, const uint8_t *ll_address);
 extern void ipv6_neighbour_invalidate_ll_addr(ipv6_neighbour_cache_t *cache, addrtype_t ll_type, const uint8_t *ll_address);
 extern void ipv6_neighbour_delete_registered_by_eui64(ipv6_neighbour_cache_t *cache, const uint8_t *eui64);
+extern bool ipv6_neighbour_has_registered_by_eui64(ipv6_neighbour_cache_t *cache, const uint8_t *eui64);
 extern void ipv6_neighbour_entry_update_unsolicited(ipv6_neighbour_cache_t *cache, ipv6_neighbour_t *entry, addrtype_t type, const uint8_t *ll_address/*, bool tentative*/);
 extern ipv6_neighbour_t *ipv6_neighbour_update_unsolicited(ipv6_neighbour_cache_t *cache, const uint8_t *ip_address, addrtype_t ll_type, const uint8_t *ll_address);
 extern void ipv6_neighbour_reachability_confirmation(const uint8_t ip_address[__static 16], int8_t interface_id);
@@ -168,8 +171,9 @@ extern void ipv6_neighbour_cache_fast_timer(ipv6_neighbour_cache_t *cache, uint1
 extern void ipv6_neighbour_cache_slow_timer(ipv6_neighbour_cache_t *cache, uint8_t seconds);
 extern void ipv6_neighbour_cache_print(const ipv6_neighbour_cache_t *cache, route_print_fn_t *print_fn);
 extern void ipv6_router_gone(ipv6_neighbour_cache_t *cache, ipv6_neighbour_t *entry);
-
 extern int8_t ipv6_neighbour_set_current_max_cache(uint16_t max_cache);
+extern int8_t ipv6_destination_cache_configure(uint16_t max_entries, uint16_t short_term_threshold, uint16_t long_term_threshold, uint16_t lifetime);
+extern int8_t ipv6_neighbour_cache_configure(uint16_t max_entries, uint16_t short_term_threshold, uint16_t long_term_threshold, uint16_t lifetime);
 
 /* Backwards compatibility with test app */
 #define ROUTE_RPL_UP ROUTE_RPL_DIO
@@ -218,6 +222,7 @@ void ipv6_destination_cache_timer(uint8_t ticks);
 #ifdef HAVE_IPV6_ND
 void ipv6_destination_redirect(const uint8_t *dest_addr, const uint8_t *sender_addr, const uint8_t *redirect_addr, int8_t interface_id, addrtype_t ll_type, const uint8_t *ll_address);
 #endif
+void ipv6_destination_cache_forced_gc(bool full_gc);
 
 /* Combined Routing Table (RFC 4191) and Prefix List (RFC 4861) */
 /* On-link prefixes have the on_link flag set and next_hop is unset */
@@ -226,7 +231,7 @@ typedef struct ipv6_route {
     bool                on_link: 1;
     bool                search_skip: 1;
     bool                probe: 1;
-    bool                info_autofree:1;
+    bool                info_autofree: 1;
     uint8_t             metric;             // 0x40 = RFC 4191 pref high, 0x80 = default, 0xC0 = RFC 4191 pref low
     ipv6_route_info_t   info;
     uint32_t            lifetime;           // (seconds); 0xFFFFFFFF means permanent

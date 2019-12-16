@@ -15,19 +15,21 @@
  */
 
 #include "TCPServer.h"
-#include "mbed.h"
+
+using mbed::Callback;
 
 TCPServer::TCPServer()
 {
+    _socket_stats.stats_update_proto(this, NSAPI_TCP);
 }
 
 TCPServer::~TCPServer()
 {
-    close();
 }
 
 nsapi_error_t TCPServer::accept(TCPSocket *connection, SocketAddress *address)
 {
+    _lock.lock();
     nsapi_error_t ret;
 
     while (true) {
@@ -36,7 +38,7 @@ nsapi_error_t TCPServer::accept(TCPSocket *connection, SocketAddress *address)
             break;
         }
 
-        _pending = 0;
+        core_util_atomic_flag_clear(&_pending);
         void *socket;
         ret = _stack->socket_accept(_socket, &socket, address);
 
@@ -51,7 +53,8 @@ nsapi_error_t TCPServer::accept(TCPSocket *connection, SocketAddress *address)
             connection->_socket = socket;
             connection->_event = Callback<void()>(connection, &TCPSocket::event);
             _stack->socket_attach(socket, &Callback<void()>::thunk, &connection->_event);
-
+            _socket_stats.stats_update_peer(connection, *address);
+            _socket_stats.stats_update_socket_state(connection, SOCK_CONNECTED);
             connection->_lock.unlock();
             break;
         } else if ((_timeout == 0) || (ret != NSAPI_ERROR_WOULD_BLOCK)) {

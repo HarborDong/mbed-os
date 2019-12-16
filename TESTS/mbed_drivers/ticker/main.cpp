@@ -20,7 +20,7 @@
 
 #if !DEVICE_USTICKER
 #error [NOT_SUPPORTED] test not supported
-#endif
+#else
 
 using utest::v1::Case;
 
@@ -71,7 +71,9 @@ void ticker_callback_1(void)
 void ticker_callback_2(void)
 {
     ++callback_trigger_count;
-    switch_led2_state();
+    if (LED2 != NC) {
+        switch_led2_state();
+    }
 }
 
 
@@ -110,7 +112,9 @@ void test_case_1x_ticker()
     Ticker ticker;
 
     led1 = 1;
-    led2 = 1;
+    if (LED2 != NC) {
+        led2 = 1;
+    }
     callback_trigger_count = 0;
 
     greentea_send_kv("timing_drift_check_start", 0);
@@ -151,7 +155,9 @@ void test_case_2x_ticker()
     Ticker ticker1, ticker2;
 
     led1 = 0;
-    led2 = 1;
+    if (LED2 != NC) {
+        led2 = 1;
+    }
     callback_trigger_count = 0;
 
     ticker1.attach_us(ticker_callback_1, 2 * ONE_MILLI_SEC);
@@ -195,7 +201,7 @@ void test_multi_ticker(void)
         ticker[i].attach_us(callback(increment_multi_counter), MULTI_TICKER_TIME_MS * 1000);
     }
 
-    Thread::wait(MULTI_TICKER_TIME_MS + extra_wait);
+    ThisThread::sleep_for(MULTI_TICKER_TIME_MS + extra_wait);
     TEST_ASSERT_EQUAL(TICKER_COUNT, multi_counter);
 
     for (int i = 0; i < TICKER_COUNT; i++) {
@@ -211,7 +217,7 @@ void test_multi_ticker(void)
         ticker[i].attach_us(callback(increment_multi_counter), (MULTI_TICKER_TIME_MS + i) * 1000);
     }
 
-    Thread::wait(MULTI_TICKER_TIME_MS + TICKER_COUNT + extra_wait);
+    ThisThread::sleep_for(MULTI_TICKER_TIME_MS + TICKER_COUNT + extra_wait);
     TEST_ASSERT_EQUAL(TICKER_COUNT, multi_counter);
 
     for (int i = 0; i < TICKER_COUNT; i++) {
@@ -257,22 +263,20 @@ void test_multi_call_time(void)
 void test_detach(void)
 {
     Ticker ticker;
-    int32_t ret;
+    bool ret;
     const float ticker_time_s = 0.1f;
     const uint32_t wait_time_ms = 500;
     Semaphore sem(0, 1);
 
     ticker.attach(callback(sem_release, &sem), ticker_time_s);
 
-    ret = sem.wait();
-    TEST_ASSERT_TRUE(ret > 0);
+    sem.acquire();
 
-    ret = sem.wait();
+    sem.acquire();
     ticker.detach(); /* cancel */
-    TEST_ASSERT_TRUE(ret > 0);
 
-    ret = sem.wait(wait_time_ms);
-    TEST_ASSERT_EQUAL(0, ret);
+    ret = sem.try_acquire_for(wait_time_ms);
+    TEST_ASSERT_FALSE(ret);
 }
 
 /** Test single callback time via attach
@@ -331,7 +335,8 @@ Case cases[] = {
     Case("Test detach", test_detach),
     Case("Test multi call and time measure", test_multi_call_time),
     Case("Test multi ticker", test_multi_ticker),
-#if !defined(__ARM_FM)  //FastModels not support time drifting test
+
+#if !defined(SKIP_TIME_DRIFT_TESTS)
     Case("Test timers: 1x ticker", test_case_1x_ticker),
     Case("Test timers: 2x ticker", test_case_2x_ticker)
 #endif
@@ -349,3 +354,5 @@ int main()
 {
     utest::v1::Harness::run(specification);
 }
+
+#endif // !DEVICE_USTICKER

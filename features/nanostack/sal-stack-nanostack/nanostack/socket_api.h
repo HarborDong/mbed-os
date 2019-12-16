@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2017, Arm Limited and affiliates.
+ * Copyright (c) 2010-2018, Arm Limited and affiliates.
  * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -672,7 +672,7 @@ static inline int8_t socket_read_session_address(int8_t socket, ns_address_t *ad
 /** \name Protocol levels used for socket_setsockopt. */
 ///@{
 #define SOCKET_SOL_SOCKET           0   /**< Socket level */
-#define SOCKET_IPPROTO_IPV6         41	/**< IPv6. */
+#define SOCKET_IPPROTO_IPV6         41  /**< IPv6. */
 ///@}
 
 /** \name Option names for protocol level SOCKET_SOL_SOCKET.

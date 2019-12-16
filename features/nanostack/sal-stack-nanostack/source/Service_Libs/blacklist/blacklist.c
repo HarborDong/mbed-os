@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, Arm Limited and affiliates.
+ * Copyright (c) 2017-2018, Arm Limited and affiliates.
  * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -89,7 +89,7 @@ bool blacklist_reject(const uint8_t *ll64_address)
         if (blacklist_entry->ttl > blacklist_data->blacklist_entry_lifetime) {
             tr_debug("blacklist reject: %s", trace_array(ll64_address + 8, 8));
             return true;
-        // Neighbor heard; updates blacklist entry TTL to full lifetime
+            // Neighbor heard; updates blacklist entry TTL to full lifetime
         } else {
             blacklist_entry->ttl = blacklist_data->blacklist_entry_lifetime;
             return false;
@@ -100,7 +100,6 @@ bool blacklist_reject(const uint8_t *ll64_address)
             tr_debug("blacklist full reject");
             return true;
         } else {
-            tr_debug("blacklist not found %s", trace_array(ll64_address + 8, 8));
             return false;
         }
     }
@@ -135,7 +134,7 @@ void blacklist_update(const uint8_t *ll64_address, bool success)
             tr_debug("Blacklist removed");
             blacklist_entry_free(blacklist_entry);
         }
-    // On failure add address to blacklist or update timeout
+        // On failure add address to blacklist or update timeout
     } else {
         if (blacklist_entry) {
             blacklist_entry->interval = blacklist_entry->interval * 2;
@@ -144,7 +143,6 @@ void blacklist_update(const uint8_t *ll64_address, bool success)
             }
             /* TTL is blacklist entry lifetime + from 1.0 to 1.5 * interval */
             blacklist_entry->ttl = blacklist_data->blacklist_entry_lifetime + randLIB_randomise_base(blacklist_entry->interval, 0x8000, 0xC000);
-            tr_debug("Blacklist updated, ttl=%"PRIu16, blacklist_entry->ttl);
         } else {
             tr_debug("Blacklist add");
             blacklist_entry_add(ll64_address + 8);
@@ -254,7 +252,7 @@ static void blacklist_entry_add(const uint8_t *eui64)
     blacklist_entry = ns_dyn_mem_alloc(sizeof(blacklist_entry_t));
 
     if (!blacklist_entry) {
-       return;
+        return;
     }
 
     blacklist_entry->interval = blacklist_data->blacklist_timer_timeout;

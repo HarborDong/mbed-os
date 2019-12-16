@@ -10,7 +10,11 @@
   #define MBED_APP_SIZE 0x00040000
 #endif 
 
-StackSize = 0x800;
+#if !defined(MBED_BOOT_STACK_SIZE)
+  #define MBED_BOOT_STACK_SIZE      0x400
+#endif
+
+StackSize = MBED_BOOT_STACK_SIZE;
 
 MEMORY
 {
@@ -59,7 +63,7 @@ SECTIONS
     {
         __vector_table = .;
         KEEP(*(.vector_table))
-         . = ALIGN(4);
+         . = ALIGN(8);
     } > VECTORS
 
 
@@ -135,20 +139,20 @@ SECTIONS
         *(vtable)
         *(.data*)
 
-        . = ALIGN(4);
+        . = ALIGN(8);
         /* preinit data */
         PROVIDE_HIDDEN (__preinit_array_start = .);
         KEEP(*(.preinit_array))
         PROVIDE_HIDDEN (__preinit_array_end = .);
 
-        . = ALIGN(4);
+        . = ALIGN(8);
         /* init data */
         PROVIDE_HIDDEN (__init_array_start = .);
         KEEP(*(SORT(.init_array.*)))
         KEEP(*(.init_array))
         PROVIDE_HIDDEN (__init_array_end = .);
 
-        . = ALIGN(4);
+        . = ALIGN(8);
         /* finit data */
         PROVIDE_HIDDEN (__fini_array_start = .);
         KEEP(*(SORT(.fini_array.*)))

@@ -1,5 +1,98 @@
 # Change Log
 
+## [v5.1.2](https://github.com/ARMmbed/mbed-coap/releases/tag/v5.1.2)
+
+- Compiler warning cleanups.
+
+-[Full Changelog](https://github.com/ARMmbed/mbed-coap/compare/v5.1.1...v5.1.2)
+
+
+## [v5.1.1](https://github.com/ARMmbed/mbed-coap/releases/tag/v5.1.1)
+
+- Delay the random initialization of message id to a later phase and not during init() so there is enough time
+  for system to complete the rest of the initialization.
+
+-[Full Changelog](https://github.com/ARMmbed/mbed-coap/compare/v5.1.0...v5.1.1)
+
+
+## [v5.1.0](https://github.com/ARMmbed/mbed-coap/releases/tag/v5.1.0)
+
+- Introduce SN_COAP_REDUCE_BLOCKWISE_HEAP_FOOTPRINT configuration flag. 
+  Flag is disabled by default to keep the backward compatibility in place.
+  If flag is enabled, application must NOT free the payload when it gets the COAP_STATUS_PARSER_BLOCKWISE_MSG_RECEIVED status.
+  And application must call sn_coap_protocol_block_remove() instead.
+
+-[Full Changelog](https://github.com/ARMmbed/mbed-coap/compare/v5.0.0...v5.1.0)
+
+## [v5.0.0](https://github.com/ARMmbed/mbed-coap/releases/tag/v5.0.0)
+
+- Reduce heap footprint by storing only single block when receiving a blockwise message.
+    * User is now responsible of freeing the data by calling sn_coap_protocol_block_remove() and must not free the payload separately.
+- Bug fix: Request blockwise transfer if incoming payload length is too large and when it comes without block indication. 
+
+-[Full Changelog](https://github.com/ARMmbed/mbed-coap/compare/v4.8.1...v5.0.0)
+
+## [v4.8.1](https://github.com/ARMmbed/mbed-coap/releases/tag/v4.8.1)
+- Store ACK's also into duplicate info list.
+- ROM size optimization. Flash size has gone down ~1100 bytes.
+
+**Closed issues:**
+-  IOTCLT-3592 - Client does not handle Duplicate ACK messages during blockwise registration correctly
+
+-[Full Changelog](https://github.com/ARMmbed/mbed-coap/compare/v4.8.0...v4.8.1)
+
+## [v4.8.0](https://github.com/ARMmbed/mbed-coap/releases/tag/v4.8.0) 
+- Make `sn_coap_protocol_linked_list_duplication_info_remove` API to public. User might want to delete some messages from the duplicate list.
+- Enable support for unified client configuration.
+
+-[Full Changelog](https://github.com/ARMmbed/mbed-coap/compare/v4.7.4...v4.8.0)
+
+## [v4.7.4](https://github.com/ARMmbed/mbed-coap/releases/tag/v4.7.4) 
+
+- Remove dependency to yotta tool
+- Do not remove stored (GET) blockwise message when EMPTY ACK received
+    When non piggybacked response mode is used original GET request must not be removed from the stored message list.
+    Message is needed for building the next (GET) blockwise message.
+- Move definitions to sn_config.h
+
+-[Full Changelog](https://github.com/ARMmbed/mbed-coap/compare/v4.7.3...v4.7.4)
+
+## [v4.7.3](https://github.com/ARMmbed/mbed-coap/releases/tag/v4.7.3) 
+
+- Do not store EMPTY response to blockwise list
+    An Empty message only contains the 4-byte header so it does not require any blockwise operations.
+    This will fix unneseccary message sending timeouts which leads mbed cloud client to do unnecessary
+    reconnections which increases the network traffic.
+
+-[Full Changelog](https://github.com/ARMmbed/mbed-coap/compare/v4.7.2...v4.7.3)
+
+## [v4.7.2](https://github.com/ARMmbed/mbed-coap/releases/tag/v4.7.2) 
+
+- Fix handling of duplicate blockwise ACK's
+    CoAP data buffer was not added into duplication info store when creating response for blockwise request.
+    This leads to case where whole bootstrap flow just timeouts if received any duplicate messages during blockwise operation.
+    Fixes error: IOTCLT-3188 - UDP connection fails for lost ACK sending
+
+- Remove error trace when building reset message without options
+    This makes it possible to build the reset message without allocating option or getting error message.
+
+-[Full Changelog](https://github.com/ARMmbed/mbed-coap/compare/v4.7.1...v4.7.2)
+
+## [v4.7.1](https://github.com/ARMmbed/mbed-coap/releases/tag/v4.7.1) 
+
+- Fix CoAP stored blockwise message release and list continue
+	Add re-scan routine goto if message is caused user callback
+	This will fix hard fault when blockwise message sending timeouts. This happens cause same list is manipulated through rx callback.
+
+-[Full Changelog](https://github.com/ARMmbed/mbed-coap/compare/v4.7.0...v4.7.1)
+
+## [v4.7.0](https://github.com/ARMmbed/mbed-coap/releases/tag/v4.7.0) 
+
+- Add function that can be used to clear the received blockwise payloads for example in the case of a connection error.
+- Silence compiler warning when CoAP duplicate detection is enabled.
+
+-[Full Changelog](https://github.com/ARMmbed/mbed-coap/compare/v4.6.3...v4.7.0)
+
 ## [v4.6.3](https://github.com/ARMmbed/mbed-coap/releases/tag/v4.6.3) 
 
  - Bug fix: Remove timed out blockwise message from resend queue. If blockwise message was timed out message was still kept in the resend queue which causes unnecessary reconnections on client side.

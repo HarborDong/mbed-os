@@ -41,7 +41,7 @@ class IAR(Exporter):
     @classmethod
     def is_target_supported(cls, target_name):
         target = TARGET_MAP[target_name]
-        return _supported(target, _GUI_OPTIONS.keys())
+        return _supported(target, list(_GUI_OPTIONS))
 
 
     def iar_groups(self, grouped_src):
@@ -86,10 +86,13 @@ class IAR(Exporter):
             "CExtraOptionsCheck": 0,
             "CExtraOptions": "",
             "CMSISDAPJtagSpeedList": 0,
+            "DSPExtension": 0,
+            "TrustZone": 0,
+            "IlinkOverrideProgramEntryLabel": 0,
+            "IlinkProgramEntryLabel": "__iar_program_start",
         }
-
         iar_defaults.update(device_info)
-        IARdevice = namedtuple('IARdevice', iar_defaults.keys())
+        IARdevice = namedtuple('IARdevice', list(iar_defaults))
         return IARdevice(**iar_defaults)
 
     def format_file(self, file):
@@ -118,13 +121,17 @@ class IAR(Exporter):
         template = ["--vla", "--no_static_destruction"]
         # Flag invalid if set in template
         # Optimizations are also set in template
-        invalid_flag = lambda x: x in template or re.match("-O(\d|time|n|hz?)", x)
+        invalid_flag = lambda x: x in template or re.match("-O(\d|time|n|l|hz?)", x)
         flags['c_flags'] = [flag for flag in c_flags if not invalid_flag(flag)]
 
         try:
             debugger = DeviceCMSIS(self.target).debug.replace('-','').upper()
         except TargetNotSupportedException:
             debugger = "CMSISDAP"
+
+        trustZoneMode = 0
+        if self.toolchain.target.core.endswith("-NS"):
+            trustZoneMode = 1
 
         ctx = {
             'name': self.project_name,
@@ -134,6 +141,7 @@ class IAR(Exporter):
             'device': self.iar_device(),
             'ewp': sep+self.project_name + ".ewp",
             'debugger': debugger,
+            'trustZoneMode': trustZoneMode,
         }
         ctx.update(flags)
 

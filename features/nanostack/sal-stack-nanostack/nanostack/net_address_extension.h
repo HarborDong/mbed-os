@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2017, Arm Limited and affiliates.
+ * Copyright (c) 2013-2018, Arm Limited and affiliates.
  * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,7 +30,7 @@ extern "C" {
   * \section set-addr Setting short address
   *  - net_ext_set_short_address_from_app(), Sets up a user-specified short address and enables or disables DAD.
   *
-  * NOTE: In case of duplication of address and DAD (duplicate address detection) enabled, i.e., DAD=1, the stack 
+  * NOTE: In case of duplication of address and DAD (duplicate address detection) enabled, i.e., DAD=1, the stack
   * generates a short address dynamically.
   *
   * - \section reset-addr Resetting short address.

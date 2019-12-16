@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2018, Arm Limited and affiliates.
+ * Copyright (c) 2018-2019, Arm Limited and affiliates.
  * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -21,11 +21,20 @@
 #include "fhss_ws_extension.h"
 #include "6LoWPAN/ws/ws_common_defines.h"
 
+#define RSL_UNITITIALIZED 0x7fff
+
 typedef struct ws_neighbor_class_entry {
     fhss_ws_neighbor_timing_info_t   fhss_data;
     uint16_t rsl_in;                                       /*!< RSL EWMA heard from neighbour*/
     uint16_t rsl_out;                                      /*!< RSL EWMA heard by neighbour*/
-    bool candidate_parent:1;
+    uint16_t routing_cost;                                 /*!< ETX to border Router. */
+    bool candidate_parent: 1;
+    bool broadcast_timing_info_stored: 1;
+    bool broadcast_shedule_info_stored: 1;
+    bool synch_done : 1;
+    bool accelerated_etx_probe : 1;
+    bool negative_aro_send : 1;
+    bool unicast_data_rx : 1;
 } ws_neighbor_class_entry_t;
 
 /**
@@ -35,6 +44,7 @@ typedef struct ws_neighbor_class_s {
     ws_neighbor_class_entry_t *neigh_info_list;           /*!< Allocated hopping info array*/
     uint8_t list_size;                                    /*!< List size*/
 } ws_neighbor_class_t;
+
 
 /**
  * ws_neighbor_class_alloc a function for allocate giving list size
@@ -66,7 +76,7 @@ void ws_neighbor_class_dealloc(ws_neighbor_class_t *class_data);
  * \return Pointer to neighbor hopping info
  *
  */
-ws_neighbor_class_entry_t * ws_neighbor_class_entry_get(ws_neighbor_class_t *class_data, uint8_t attribute_index);
+ws_neighbor_class_entry_t *ws_neighbor_class_entry_get(ws_neighbor_class_t *class_data, uint8_t attribute_index);
 
 /**
  * ws_neighbor_class_entry_t a function for search hopping info for giving neighbor attribute index
@@ -128,21 +138,32 @@ void ws_neighbor_class_neighbor_broadcast_time_info_update(ws_neighbor_class_ent
 void ws_neighbor_class_neighbor_broadcast_schedule_set(ws_neighbor_class_entry_t *ws_neighbor, ws_bs_ie_t *ws_bs_ie);
 
 /**
- * ws_neighbor_class_rssi_from_dbm_calculate
+ * ws_neighbor_class_rf_sensitivity_calculate
  *
- * Calculates rssi value from dbm heard taking into account min sensitivity of radio
- * dynamically adjusts min sensitivity if value is not properly set
+ * Calculates minimum heard RSL value from all packets.
+ * This will dynamically adjusts min sensitivity if value is not properly set
+ *
+ * \param rsl_heard; rsl_heard heard from Radio
+ *
+ */
+void ws_neighbor_class_rf_sensitivity_calculate(uint8_t rsl_heard);
+
+/**
+ * ws_neighbor_class_rsl_from_dbm_calculate
+ *
+ * Calculates rsl value from dbm heard.
+ * This provides a range of -174 (0) to +80 (254) dBm.
  *
  * \param dbm_heard; dbm heard from the neighbour
  *
  */
-uint8_t ws_neighbor_class_rssi_from_dbm_calculate(int8_t dbm_heard);
+uint8_t ws_neighbor_class_rsl_from_dbm_calculate(int8_t dbm_heard);
 
 /** Helper macros to read RSL values from neighbour class.
  *
  */
 #define ws_neighbor_class_rsl_in_get(ws_neighbour) (ws_neighbour->rsl_in >> WS_RSL_SCALING)
-#define ws_neighbor_class_rsl_out_get(ws_neighbour) (ws_neighbour->rsl_in >> WS_RSL_SCALING)
+#define ws_neighbor_class_rsl_out_get(ws_neighbour) (ws_neighbour->rsl_out >> WS_RSL_SCALING)
 
 /**
  * ws_neighbor_class_neighbor_broadcast_schedule_set a function for update neighbor broadcast shedule information

@@ -18,7 +18,6 @@
 #define EMAC_INTERFACE_H
 
 #include "nsapi.h"
-#include "rtos.h"
 #include "EMAC.h"
 #include "OnboardNetworkStack.h"
 
@@ -33,7 +32,7 @@
  * Drivers derived from EMACInterface should be constructed so that their
  * EMAC is functional without the need to call `connect()`. For example
  * a Wi-Fi driver should permit `WiFi::get_emac().power_up()` as soon as
- * the credentials have been set. This is necessary to support specialised
+ * the credentials have been set. This is necessary to support specialized
  * applications such as 6LoWPAN mesh border routers.
  */
 class EMACInterface : public virtual NetworkInterface {
@@ -65,6 +64,9 @@ public:
      *  @param gateway     Null-terminated representation of the local gateway
      *  @return            0 on success, negative error code on failure
      */
+    virtual nsapi_error_t set_network(const SocketAddress &ip_address, const SocketAddress &netmask, const SocketAddress &gateway);
+
+    MBED_DEPRECATED_SINCE("mbed-os-5.15", "String-based APIs are deprecated")
     virtual nsapi_error_t set_network(const char *ip_address, const char *netmask, const char *gateway);
 
     /** Enable or disable DHCP on the network
@@ -72,69 +74,54 @@ public:
      *  Requires that the network is disconnected
      *
      *  @param dhcp     False to disable dhcp (defaults to enabled)
-     *  @return         0 on success, negative error code on failure
+     *  @retval         NSAPI_ERROR_OK on success.
+     *  @retval         NSAPI_ERROR_UNSUPPORTED if operation is not supported.
      */
     virtual nsapi_error_t set_dhcp(bool dhcp);
 
-    /** Start the interface
-     *  @return             0 on success, negative on failure
-     */
+    /** @copydoc NetworkInterface::connect */
     virtual nsapi_error_t connect();
 
-    /** Stop the interface
-     *  @return             0 on success, negative on failure
-     */
+    /** @copydoc NetworkInterface::disconnect */
     virtual nsapi_error_t disconnect();
 
-    /** Get the local MAC address
-     *
-     *  Provided MAC address is intended for info or debug purposes and
-     *  may not be provided if the underlying network interface does not
-     *  provide a MAC address
-     *
-     *  @return         Null-terminated representation of the local MAC address
-     *                  or null if no MAC address is available
-     */
+    /** @copydoc NetworkInterface::get_mac_address */
     virtual const char *get_mac_address();
 
-    /** Get the local IP address
-     *
-     *  @return         Null-terminated representation of the local IP address
-     *                  or null if no IP address has been recieved
-     */
+    /** @copydoc NetworkInterface::get_ip_address */
+    virtual nsapi_error_t get_ip_address(SocketAddress *address);
+
+    MBED_DEPRECATED_SINCE("mbed-os-5.15", "String-based APIs are deprecated")
     virtual const char *get_ip_address();
 
-    /** Get the local network mask
-     *
-     *  @return         Null-terminated representation of the local network mask
-     *                  or null if no network mask has been recieved
-     */
+    /** @copydoc NetworkInterface::get_ipv6_link_local_address */
+    virtual nsapi_error_t get_ipv6_link_local_address(SocketAddress *address);
+
+    /** @copydoc NetworkInterface::get_netmask */
+    virtual nsapi_error_t get_netmask(SocketAddress *address);
+
+    MBED_DEPRECATED_SINCE("mbed-os-5.15", "String-based APIs are deprecated")
     virtual const char *get_netmask();
 
-    /** Get the local gateways
-     *
-     *  @return         Null-terminated representation of the local gateway
-     *                  or null if no network mask has been recieved
-     */
+    /** @copydoc NetworkInterface::get_gateway */
+    virtual nsapi_error_t get_gateway(SocketAddress *address);
+
+    MBED_DEPRECATED_SINCE("mbed-os-5.15", "String-based APIs are deprecated")
     virtual const char *get_gateway();
 
-    /** Register callback for status reporting
-     *
-     *  @param status_cb The callback for status changes
-     */
+    /** @copydoc NetworkInterface::get_interface_name */
+    virtual char *get_interface_name(char *interface_name);
+
+    /** @copydoc NetworkInterface::set_as_default */
+    virtual void set_as_default();
+
+    /** @copydoc NetworkInterface::attach */
     virtual void attach(mbed::Callback<void(nsapi_event_t, intptr_t)> status_cb);
 
-    /** Get the connection status
-     *
-     *  @return         The connection status according to nsapi_connection_status_t
-     */
+    /** @copydoc NetworkInterface::get_connection_status */
     virtual nsapi_connection_status_t get_connection_status() const;
 
-    /** Set blocking status of connect() which by default should be blocking
-     *
-     *  @param blocking true if connect is blocking
-     *  @return         0 on success, negative error code on failure
-     */
+    /** @copydoc NetworkInterface::set_blocking */
     virtual nsapi_error_t set_blocking(bool blocking);
 
     /** Provide access to the EMAC
@@ -171,7 +158,7 @@ protected:
     char _ip_address[NSAPI_IPv6_SIZE];
     char _netmask[NSAPI_IPv4_SIZE];
     char _gateway[NSAPI_IPv4_SIZE];
-    Callback<void(nsapi_event_t, intptr_t)> _connection_status_cb;
+    mbed::Callback<void(nsapi_event_t, intptr_t)> _connection_status_cb;
 };
 
 #endif

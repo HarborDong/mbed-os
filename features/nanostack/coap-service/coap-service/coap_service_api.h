@@ -40,9 +40,9 @@ extern "C" {
 #define COAP_SERVICE_ACCESS_DELETE_ALLOWED      0x08
 
 // Bits for service options
-#define COAP_SERVICE_OPTIONS_NONE  	        	0x00
+#define COAP_SERVICE_OPTIONS_NONE               0x00
 #define COAP_SERVICE_OPTIONS_VIRTUAL_SOCKET     0x01
-#define COAP_SERVICE_OPTIONS_SECURE 	        0x02
+#define COAP_SERVICE_OPTIONS_SECURE             0x02
 #define COAP_SERVICE_OPTIONS_EPHEMERAL_PORT     0x04
 /** Coap interface selected as socket interface */
 #define COAP_SERVICE_OPTIONS_SELECT_SOCKET_IF   0x08
@@ -52,7 +52,7 @@ extern "C" {
 #define COAP_SERVICE_OPTIONS_SECURE_BYPASS      0x80
 
 // Bits for request options
-#define COAP_REQUEST_OPTIONS_NONE  		        0x00
+#define COAP_REQUEST_OPTIONS_NONE               0x00
 #define COAP_REQUEST_OPTIONS_ADDRESS_DEFAULT    0x00//!< default is not setting either short or long.
 #define COAP_REQUEST_OPTIONS_ADDRESS_LONG       0x01
 #define COAP_REQUEST_OPTIONS_ADDRESS_SHORT      0x02
@@ -105,7 +105,7 @@ typedef int coap_service_request_recv_cb(int8_t service_id, uint8_t source_addre
  *
  * \return 0 for success / -1 for failure
  */
-typedef int coap_service_security_start_cb(int8_t service_id, uint8_t address[static 16], uint16_t port, uint8_t* pw, uint8_t *pw_len);
+typedef int coap_service_security_start_cb(int8_t service_id, uint8_t address[static 16], uint16_t port, uint8_t *pw, uint8_t *pw_len);
 
 /**
  * \brief CoAP service security done callback
@@ -121,6 +121,26 @@ typedef int coap_service_security_start_cb(int8_t service_id, uint8_t address[st
 typedef int coap_service_security_done_cb(int8_t service_id, uint8_t address[static 16], uint8_t keyblock[static 40]);
 
 /**
+ * \brief Message prevalidation callback
+ *
+ * Message prevalidation callback function type used in method coap_service_msg_prevalidate_callback_set.
+ *
+ * \param local_interface_id    Local interface ID, message arrived to this interface.
+ * \param local_address         Local address, message arrived to this address.
+ * \param local_port            Local port, message arrived to this port.
+ * \param recv_interface_id     Interface ID where message was received.
+ * \param source_address        Sender address.
+ * \param source_port           Sender port.
+ * \param coap_uri              CoAP URI, NUL terminated.
+ *
+ * \return <0 in case of errors,
+ *         0 if message is valid to process further,
+ *         >0 if message should be dropped.
+ */
+
+typedef int coap_service_msg_prevalidate_cb(int8_t local_interface_id, uint8_t local_address[static 16], uint16_t local_port, int8_t recv_interface_id, uint8_t source_address[static 16], uint16_t source_port, char *coap_uri);
+
+/**
  * \brief Initialise server instance.
  *
  * Initialise Thread services for the registered application.
@@ -131,7 +151,7 @@ typedef int coap_service_security_done_cb(int8_t service_id, uint8_t address[sta
  * \param *start_ptr         Callback to inform security handling is started and to fetch device password.
  * \param *coap_security_done_cb  Callback to inform security handling is done.
  *
- *  \return service_id / -1 for failure
+ * \return service_id / -1 for failure
  */
 extern int8_t coap_service_initialize(int8_t interface_id, uint16_t listen_port, uint8_t service_options, coap_service_security_start_cb *start_ptr, coap_service_security_done_cb *coap_security_done_cb);
 
@@ -142,7 +162,7 @@ extern int8_t coap_service_initialize(int8_t interface_id, uint16_t listen_port,
  *
  * \param service_id         Id number of the current service.
  */
-extern void coap_service_delete( int8_t service_id );
+extern void coap_service_delete(int8_t service_id);
 
 /**
  * \brief Close secure connection
@@ -243,7 +263,7 @@ extern int8_t coap_service_unregister_uri(int8_t service_id, const char *uri);
  * \return msg_id               Id number of the current message.
  */
 extern uint16_t coap_service_request_send(int8_t service_id, uint8_t options, const uint8_t destination_addr[static 16], uint16_t destination_port, sn_coap_msg_type_e msg_type, sn_coap_msg_code_e msg_code, const char *uri,
-        sn_coap_content_format_e cont_type, const uint8_t *payload_ptr, uint16_t payload_len, coap_service_response_recv *request_response_cb);
+                                          sn_coap_content_format_e cont_type, const uint8_t *payload_ptr, uint16_t payload_len, coap_service_response_recv *request_response_cb);
 
 /**
  * \brief Sends CoAP service response
@@ -261,7 +281,7 @@ extern uint16_t coap_service_request_send(int8_t service_id, uint8_t options, co
  * \return -1              For failure
  *-         0              For success
  */
-extern int8_t coap_service_response_send(int8_t service_id, uint8_t options, sn_coap_hdr_s *request_ptr, sn_coap_msg_code_e message_code, sn_coap_content_format_e content_type, const uint8_t *payload_ptr,uint16_t payload_len);
+extern int8_t coap_service_response_send(int8_t service_id, uint8_t options, sn_coap_hdr_s *request_ptr, sn_coap_msg_code_e message_code, sn_coap_content_format_e content_type, const uint8_t *payload_ptr, uint16_t payload_len);
 
 /**
  * \brief Sends CoAP service response
@@ -280,9 +300,7 @@ extern int8_t coap_service_response_send(int8_t service_id, uint8_t options, sn_
  * \return -1              For failure
  *-         0              For success
  */
-extern int8_t coap_service_response_send_by_msg_id(int8_t service_id, uint8_t options, uint16_t msg_id, sn_coap_msg_code_e message_code, sn_coap_content_format_e content_type, const uint8_t *payload_ptr,uint16_t payload_len);
-
-
+extern int8_t coap_service_response_send_by_msg_id(int8_t service_id, uint8_t options, uint16_t msg_id, sn_coap_msg_code_e message_code, sn_coap_content_format_e content_type, const uint8_t *payload_ptr, uint16_t payload_len);
 
 /**
  * \brief Delete CoAP request transaction
@@ -296,6 +314,15 @@ extern int8_t coap_service_response_send_by_msg_id(int8_t service_id, uint8_t op
  *-         0              For success
  */
 extern int8_t coap_service_request_delete(int8_t service_id, uint16_t msg_id);
+
+/**
+ * \brief Delete CoAP requests from service id
+ *
+ * Removes pending CoAP requests from service specified by service_id.
+ *
+ * \param service_id       Id number of the current service.
+ */
+extern void coap_service_request_delete_by_service_id(int8_t service_id);
 
 /**
  * \brief Set DTLS handshake timeout values
@@ -366,6 +393,22 @@ extern int8_t coap_service_certificate_set(int8_t service_id, const unsigned cha
  *-         0              For success
  */
 extern int8_t coap_service_blockwise_size_set(int8_t service_id, uint16_t size);
+
+/**
+ * \brief Set message prevalidation callback function.
+ *
+ * Set message prevalidation callback function for the service. Callback will be called for all services using the same listen port.
+ *
+ * CoAP service will call this function to allow application prevalidate incoming CoAP message before passing it to application.
+ *
+ * \param listen_port           Socket port where to set callback.
+ * \param msg_prevalidate_cb    Callback to be called to validate incoming message before processing it. Use NULL to clear callback usage.
+ *
+ * \return -1              For failure
+ *          0              For success
+ */
+extern int8_t coap_service_msg_prevalidate_callback_set(uint16_t listen_port, coap_service_msg_prevalidate_cb *msg_prevalidate_cb);
+
 #ifdef __cplusplus
 }
 #endif

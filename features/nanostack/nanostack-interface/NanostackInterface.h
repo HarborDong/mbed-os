@@ -18,12 +18,12 @@
 #ifndef NANOSTACK_INTERFACE_H_
 #define NANOSTACK_INTERFACE_H_
 
-#include "mbed.h"
 #include "MeshInterface.h"
 // Include here for backward compatibility
 #include "LoWPANNDInterface.h"
 #include "ThreadInterface.h"
 #include "NanostackEthernetInterface.h"
+#include "NanostackPPPInterface.h"
 #include "MeshInterfaceNanostack.h"
-
+#include "WisunInterface.h"
 #endif /* NANOSTACK_INTERFACE_H_ */

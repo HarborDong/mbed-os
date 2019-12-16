@@ -15,11 +15,14 @@
  */
 
 #include "FlashSimBlockDevice.h"
-#include "mbed_assert.h"
-#include "mbed_critical.h"
+#include "platform/mbed_assert.h"
+#include "platform/mbed_atomic.h"
 #include <algorithm>
 #include <stdlib.h>
 #include <string.h>
+#include "mbed_assert.h"
+
+namespace mbed {
 
 static const bd_size_t min_blank_buf_size = 32;
 
@@ -32,6 +35,7 @@ FlashSimBlockDevice::FlashSimBlockDevice(BlockDevice *bd, uint8_t erase_value) :
     _erase_value(erase_value), _blank_buf_size(0),
     _blank_buf(0), _bd(bd), _init_ref_count(0), _is_initialized(false)
 {
+    MBED_ASSERT(bd);
 }
 
 FlashSimBlockDevice::~FlashSimBlockDevice()
@@ -96,7 +100,7 @@ int FlashSimBlockDevice::sync()
 bd_size_t FlashSimBlockDevice::get_read_size() const
 {
     if (!_is_initialized) {
-        return BD_ERROR_DEVICE_ERROR;
+        return 0;
     }
 
     return _bd->get_read_size();
@@ -105,7 +109,7 @@ bd_size_t FlashSimBlockDevice::get_read_size() const
 bd_size_t FlashSimBlockDevice::get_program_size() const
 {
     if (!_is_initialized) {
-        return BD_ERROR_DEVICE_ERROR;
+        return 0;
     }
 
     return _bd->get_program_size();
@@ -114,7 +118,7 @@ bd_size_t FlashSimBlockDevice::get_program_size() const
 bd_size_t FlashSimBlockDevice::get_erase_size() const
 {
     if (!_is_initialized) {
-        return BD_ERROR_DEVICE_ERROR;
+        return 0;
     }
 
     return _bd->get_erase_size();
@@ -123,7 +127,7 @@ bd_size_t FlashSimBlockDevice::get_erase_size() const
 bd_size_t FlashSimBlockDevice::get_erase_size(bd_addr_t addr) const
 {
     if (!_is_initialized) {
-        return BD_ERROR_DEVICE_ERROR;
+        return 0;
     }
 
     return _bd->get_erase_size(addr);
@@ -132,7 +136,7 @@ bd_size_t FlashSimBlockDevice::get_erase_size(bd_addr_t addr) const
 bd_size_t FlashSimBlockDevice::size() const
 {
     if (!_is_initialized) {
-        return BD_ERROR_DEVICE_ERROR;
+        return 0;
     }
 
     return _bd->size();
@@ -209,3 +213,15 @@ int FlashSimBlockDevice::get_erase_value() const
 {
     return _erase_value;
 }
+
+const char *FlashSimBlockDevice::get_type() const
+{
+    if (_bd != NULL) {
+        return _bd->get_type();
+    }
+
+    return NULL;
+}
+
+} // namespace mbed
+

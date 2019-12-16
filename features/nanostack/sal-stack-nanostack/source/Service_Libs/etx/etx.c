@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2018, Arm Limited and affiliates.
+ * Copyright (c) 2014-2019, Arm Limited and affiliates.
  * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -23,8 +23,9 @@
 #include "platform/arm_hal_phy.h"
 #include "net_interface.h"
 
-#include "Core/include/address.h"
+#include "Core/include/ns_address_internal.h"
 #include "MLE/mle.h"
+#include "NWK_INTERFACE/Include/protocol_abstract.h"
 #include "NWK_INTERFACE/Include/protocol.h"
 #include "NWK_INTERFACE/Include/protocol_stats.h"
 #include "Service_Libs/etx/etx.h"
@@ -39,15 +40,34 @@
 static uint16_t etx_current_calc(uint16_t etx, uint8_t accumulated_failures);
 static uint16_t etx_dbm_lqi_calc(uint8_t lqi, int8_t dbm);
 static void etx_value_change_callback_needed_check(uint16_t etx, uint16_t *stored_diff_etx, uint8_t accumulated_failures, uint8_t attribute_index);
-static void etx_accum_failures_callback_needed_check(etx_storage_t * entry, uint8_t attribute_index);
+static void etx_accum_failures_callback_needed_check(etx_storage_t *entry, uint8_t attribute_index);
+static void etx_cache_entry_init(uint8_t attribute_index);
+
+#if ETX_ACCELERATED_SAMPLE_COUNT == 0 || ETX_ACCELERATED_SAMPLE_COUNT > 6
+#error "ETX_ACCELERATED_SAMPLE_COUNT accepted values 1-6"
+#endif
+
+#if ETX_ACCELERATED_INTERVAL == 0
+#error "ETX_ACCELERATED_INTERVAL can't be zero"
+#endif
+
+#if ETX_ACCELERATED_INTERVAL >= ETX_ACCELERATED_SAMPLE_COUNT
+#error "ETX_ACCELERATED_INTERVAL must be < ETX_ACCELERATED_SAMPLE_COUNT"
+#endif
+
 
 typedef struct {
-    uint16_t hysteresis;                            // 12 bit fraction
-    uint8_t accum_threshold;
     etx_value_change_handler_t *callback_ptr;
     etx_accum_failures_handler_t *accum_cb_ptr;
     etx_storage_t *etx_storage_list;
+    etx_sample_storage_t *etx_cache_storage_list;
+    uint32_t max_etx_update;
+    uint16_t hysteresis;                            // 12 bit fraction
+    uint8_t accum_threshold;
+    uint8_t etx_min_sampling_time;
     uint8_t ext_storage_list_size;
+    uint8_t min_sample_count;
+    bool cache_sample_requested;
     int8_t interface_id;
 } ext_info_t;
 
@@ -57,9 +77,111 @@ static ext_info_t etx_info = {
     .callback_ptr = NULL,
     .accum_cb_ptr = NULL,
     .etx_storage_list = NULL,
+    .etx_cache_storage_list = NULL,
     .ext_storage_list_size = 0,
+    .min_sample_count = 0,
+    .max_etx_update = 0,
+    .cache_sample_requested = false,
+    .etx_min_sampling_time = 0,
     .interface_id = -1
 };
+
+static void etx_calculation(etx_storage_t *entry, uint16_t attempts, uint8_t acks_rx, uint8_t attribute_index)
+{
+    if (etx_info.hysteresis && !entry->stored_diff_etx) {
+        entry->stored_diff_etx = entry->etx;
+    }
+
+    uint32_t etx = attempts << (12 - ETX_MOVING_AVERAGE_FRACTION);
+
+    if (acks_rx) {
+        etx /= acks_rx;
+    } else  {
+        etx = 0xffff;
+    }
+    if ((etx_info.max_etx_update) && etx > etx_info.max_etx_update) {
+        etx = etx_info.max_etx_update;
+    }
+
+    if (etx_info.cache_sample_requested && entry->etx_samples == 1) {
+        // skip the initial value as RSSI generated ETX is not valid
+        etx = etx << 3;
+    } else {
+        //Add old etx 7/8 to new one
+        etx += entry->etx - (entry->etx >> ETX_MOVING_AVERAGE_FRACTION);
+    }
+
+    if (etx > 0xffff) {
+        etx = 0xffff;
+    }
+
+    // If real ETX value has been received do not update based on LQI or dBm
+    entry->tmp_etx = false;
+    entry->etx = etx;
+
+    etx_cache_entry_init(attribute_index);
+
+    // Checks if ETX value change callback is needed
+    etx_value_change_callback_needed_check(entry->etx, &(entry->stored_diff_etx), entry->accumulated_failures, attribute_index);
+}
+
+static void etx_cache_entry_init(uint8_t attribute_index)
+{
+    if (!etx_info.cache_sample_requested) {
+        return;
+    }
+
+    etx_sample_storage_t *storage = etx_info.etx_cache_storage_list + attribute_index;
+    storage->attempts_count = 0;
+    storage->etx_timer = etx_info.etx_min_sampling_time;
+    storage->received_acks = 0;
+    storage->sample_count = 0;
+}
+
+static bool etx_update_possible(etx_sample_storage_t *storage, etx_storage_t *entry, uint16_t time_update)
+{
+    if (storage->etx_timer && time_update) {
+        if (time_update >= storage->etx_timer) {
+            storage->etx_timer = 0;
+        } else {
+            storage->etx_timer -= time_update;
+        }
+    }
+
+    if (entry->etx_samples > ETX_ACCELERATED_SAMPLE_COUNT) {
+        //Slower ETX update phase
+        if (storage->sample_count < etx_info.min_sample_count || storage->etx_timer) {
+            if (storage->sample_count < 0xff) {
+                return false;
+            }
+        }
+    } else {
+        //Accelerated ETX at for new neighbor
+        if (storage->sample_count < ETX_ACCELERATED_INTERVAL) {
+            return false;
+        }
+    }
+
+    //tr_debug("ETX update possible %u attempts, %u rx ack", storage->attempts_count, storage->received_acks);
+
+    return true;
+
+}
+
+
+static etx_sample_storage_t *etx_cache_sample_update(uint8_t attribute_index, uint8_t attempts, bool ack_rx)
+{
+    etx_sample_storage_t *storage = etx_info.etx_cache_storage_list + attribute_index;
+    storage->attempts_count += attempts;
+    if (ack_rx) {
+        storage->received_acks++;
+    }
+    storage->sample_count++;
+    return storage;
+
+}
+
+
 
 /**
  * \brief A function to update ETX value based on transmission attempts
@@ -74,11 +196,26 @@ static ext_info_t etx_info = {
  */
 void etx_transm_attempts_update(int8_t interface_id, uint8_t attempts, bool success, uint8_t attribute_index)
 {
-    uint32_t etx;
     uint8_t accumulated_failures;
     // Gets table entry
-    etx_storage_t * entry = etx_storage_entry_get(interface_id, attribute_index);
+    etx_storage_t *entry = etx_storage_entry_get(interface_id, attribute_index);
     if (!entry) {
+        return;
+    }
+    if (entry->etx_samples < 7) {
+        entry->etx_samples++;
+    }
+
+    if (etx_info.cache_sample_requested) {
+
+        etx_sample_storage_t *storage = etx_cache_sample_update(attribute_index, attempts, success);
+        entry->accumulated_failures = 0;
+
+        if (!entry->etx || (entry->etx_samples > 1 &&  !etx_update_possible(storage, entry, 0))) {
+            return;
+        }
+
+        etx_calculation(entry, storage->attempts_count, storage->received_acks, attribute_index);
         return;
     }
 
@@ -101,28 +238,10 @@ void etx_transm_attempts_update(int8_t interface_id, uint8_t attempts, bool succ
     }
 
     if (entry->etx) {
-        // If hysteresis is set stores ETX value for comparison
-        if (etx_info.hysteresis && !entry->stored_diff_etx) {
-            entry->stored_diff_etx = entry->etx;
-        }
 
         if (success) {
-            // ETX = 7/8 * current ETX + 1/8 * ((attempts + failed attempts) << 12)
-            etx = entry->etx - (entry->etx >> ETX_MOVING_AVERAGE_FRACTION);
-            etx += (attempts + accumulated_failures) << (12 - ETX_MOVING_AVERAGE_FRACTION);
-
-            if (etx > 0xffff) {
-                entry->etx = 0xffff;
-            } else {
-                entry->etx = etx;
-            }
+            etx_calculation(entry, attempts + accumulated_failures, 1, attribute_index);
         }
-
-        // If real ETX value has been received do not update based on LQI or dBm
-        entry->tmp_etx = false;
-
-        // Checks if ETX value change callback is needed
-        etx_value_change_callback_needed_check(entry->etx, &(entry->stored_diff_etx), entry->accumulated_failures, attribute_index);
     }
 }
 
@@ -137,7 +256,7 @@ void etx_transm_attempts_update(int8_t interface_id, uint8_t attempts, bool succ
  */
 void etx_remote_incoming_idr_update(int8_t interface_id, uint8_t remote_incoming_idr, uint8_t attribute_index)
 {
-    etx_storage_t * entry = etx_storage_entry_get(interface_id, attribute_index);
+    etx_storage_t *entry = etx_storage_entry_get(interface_id, attribute_index);
 
     if (entry) {
         // If ETX has been set
@@ -205,10 +324,7 @@ uint16_t etx_read(int8_t interface_id, addrtype_t addr_type, const uint8_t *addr
     }
     attribute_index = mac_neighbor->index;
 
-
-    //tr_debug("Etx Read from atribute %u", attribute_index);
-
-    etx_storage_t * entry = etx_storage_entry_get(interface_id, attribute_index);
+    etx_storage_t *entry = etx_storage_entry_get(interface_id, attribute_index);
 
     if (!entry) {
         return 0xffff;
@@ -216,8 +332,6 @@ uint16_t etx_read(int8_t interface_id, addrtype_t addr_type, const uint8_t *addr
 
     uint16_t etx  = etx_current_calc(entry->etx, entry->accumulated_failures);
     etx >>= 4;
-
-    //tr_debug("Etx value %u", etx);
 
     return etx;
 }
@@ -235,7 +349,7 @@ uint16_t etx_read(int8_t interface_id, addrtype_t addr_type, const uint8_t *addr
 uint16_t etx_local_incoming_idr_read(int8_t interface_id, uint8_t attribute_index)
 {
     uint32_t local_incoming_idr = 0;
-    etx_storage_t * entry = etx_storage_entry_get(interface_id, attribute_index);
+    etx_storage_t *entry = etx_storage_entry_get(interface_id, attribute_index);
     if (entry) {
         uint16_t local_etx = etx_current_calc(entry->etx, entry->accumulated_failures);
 
@@ -259,7 +373,7 @@ uint16_t etx_local_incoming_idr_read(int8_t interface_id, uint8_t attribute_inde
  */
 uint16_t etx_local_etx_read(int8_t interface_id, uint8_t attribute_index)
 {
-    etx_storage_t * entry = etx_storage_entry_get(interface_id, attribute_index);
+    etx_storage_t *entry = etx_storage_entry_get(interface_id, attribute_index);
     if (!entry) {
         return 0;
     }
@@ -392,14 +506,14 @@ static uint16_t etx_dbm_lqi_calc(uint8_t lqi, int8_t dbm)
         etx = signal_info.result;
         etx <<= 4;
     } else {
-       /* Atmel version
-          dBm = RSSI base value [dBm] + 1.03 [dB] x ED level
-          LQI = errors in received frame */
+        /* Atmel version
+           dBm = RSSI base value [dBm] + 1.03 [dB] x ED level
+           LQI = errors in received frame */
 
-       // for dBm -90 and LQI 0 ETX will be 2.4
-       etx = ((dbm * -1) * (256 - lqi));
-       etx >>= 1; // scale result to 12 bits
-       etx += 1 << 12; // add one (perfect link)
+        // for dBm -90 and LQI 0 ETX will be 2.4
+        etx = ((dbm * -1) * (256 - lqi));
+        etx >>= 1; // scale result to 12 bits
+        etx += 1 << 12; // add one (perfect link)
     }
 
     return etx;
@@ -434,6 +548,9 @@ bool etx_storage_list_allocate(int8_t interface_id, uint8_t etx_storage_size)
 {
     if (!etx_storage_size) {
         ns_dyn_mem_free(etx_info.etx_storage_list);
+        ns_dyn_mem_free(etx_info.etx_cache_storage_list);
+        etx_info.etx_cache_storage_list = NULL;
+        etx_info.cache_sample_requested = false;
         etx_info.etx_storage_list = NULL;
         etx_info.ext_storage_list_size = 0;
         return true;
@@ -444,16 +561,22 @@ bool etx_storage_list_allocate(int8_t interface_id, uint8_t etx_storage_size)
     }
 
     ns_dyn_mem_free(etx_info.etx_storage_list);
+    etx_info.cache_sample_requested = false;
     etx_info.ext_storage_list_size = 0;
     etx_info.etx_storage_list = ns_dyn_mem_alloc(sizeof(etx_storage_t) * etx_storage_size);
+
     if (!etx_info.etx_storage_list) {
+        ns_dyn_mem_free(etx_info.etx_storage_list);
+        etx_info.etx_storage_list = NULL;
+        etx_info.ext_storage_list_size = 0;
         return false;
     }
 
+
     etx_info.ext_storage_list_size = etx_storage_size;
     etx_info.interface_id = interface_id;
-    etx_storage_t * list_ptr = etx_info.etx_storage_list;
-    for (uint8_t i = 0; i< etx_storage_size; i++) {
+    etx_storage_t *list_ptr = etx_info.etx_storage_list;
+    for (uint8_t i = 0; i < etx_storage_size; i++) {
         memset(list_ptr, 0, sizeof(etx_storage_t));
 
         list_ptr++;
@@ -462,10 +585,54 @@ bool etx_storage_list_allocate(int8_t interface_id, uint8_t etx_storage_size)
 
 }
 
+bool etx_cached_etx_parameter_set(uint8_t min_wait_time, uint8_t etx_min_sample_count)
+{
+    //No ini ETX allocation done yet
+    if (etx_info.ext_storage_list_size == 0) {
+        return false;
+    }
+
+    if (min_wait_time || etx_min_sample_count) {
+        if (!etx_info.etx_cache_storage_list) {
+            //allocate
+            etx_info.etx_cache_storage_list = ns_dyn_mem_alloc(sizeof(etx_sample_storage_t) * etx_info.ext_storage_list_size);
+
+            if (!etx_info.etx_cache_storage_list) {
+                return false;
+            }
+            etx_info.cache_sample_requested = true;
+            etx_sample_storage_t *sample_list = etx_info.etx_cache_storage_list;
+            for (uint8_t i = 0; i < etx_info.ext_storage_list_size; i++) {
+                memset(sample_list, 0, sizeof(etx_sample_storage_t));
+                sample_list++;
+            }
+        }
+
+    } else {
+        //Free Cache table we not need that anymore
+        etx_info.cache_sample_requested = false;
+        ns_dyn_mem_free(etx_info.etx_cache_storage_list);
+        etx_info.etx_cache_storage_list = NULL;
+    }
+
+    etx_info.min_sample_count = etx_min_sample_count;
+    etx_info.etx_min_sampling_time = min_wait_time;
+
+    return true;
+}
+
+void etx_max_update_set(uint16_t etx_max_update)
+{
+    if (etx_max_update) {
+        etx_info.max_etx_update = (etx_max_update / 128) << (12 - ETX_MOVING_AVERAGE_FRACTION);
+    } else {
+        etx_info.max_etx_update = 0;
+    }
+}
+
 etx_storage_t *etx_storage_entry_get(int8_t interface_id, uint8_t attribute_index)
 {
     if (etx_info.interface_id != interface_id || !etx_info.etx_storage_list || attribute_index >= etx_info.ext_storage_list_size) {
-        tr_debug("Unknow ID or un initilized ETX %u", attribute_index);
         return NULL;
     }
 
@@ -553,7 +720,7 @@ static void etx_value_change_callback_needed_check(uint16_t etx, uint16_t *store
  *
  * \param neigh_table_ptr the neighbor node in question
  */
-static void etx_accum_failures_callback_needed_check(etx_storage_t * entry, uint8_t attribute_index)
+static void etx_accum_failures_callback_needed_check(etx_storage_t *entry, uint8_t attribute_index)
 {
     if (!etx_info.accum_threshold) {
         return;
@@ -575,9 +742,10 @@ static void etx_accum_failures_callback_needed_check(etx_storage_t * entry, uint
  * \param mac64_addr_ptr long MAC address
  *
  */
-void etx_neighbor_remove(int8_t interface_id, uint8_t attribute_index) {
+void etx_neighbor_remove(int8_t interface_id, uint8_t attribute_index)
+{
 
-    tr_debug("Remove attribute %u", attribute_index);
+    //tr_debug("Remove attribute %u", attribute_index);
     uint16_t stored_diff_etx;
     etx_storage_t *entry = etx_storage_entry_get(interface_id, attribute_index);
     if (entry && etx_info.callback_ptr) {
@@ -588,6 +756,12 @@ void etx_neighbor_remove(int8_t interface_id, uint8_t attribute_index) {
                 stored_diff_etx = 0xffff;
             }
             etx_info.callback_ptr(etx_info.interface_id, stored_diff_etx, 0xffff, attribute_index);
+        }
+
+        if (etx_info.cache_sample_requested) {
+            //Clear cached values
+            etx_sample_storage_t *cache_entry = etx_info.etx_cache_storage_list + attribute_index;
+            memset(cache_entry, 0, sizeof(etx_sample_storage_t));
         }
         //Clear all data base back to zero for new user
         memset(entry, 0, sizeof(etx_storage_t));
@@ -603,9 +777,10 @@ void etx_neighbor_remove(int8_t interface_id, uint8_t attribute_index) {
  * \param mac64_addr_ptr long MAC address
  *
  */
-void etx_neighbor_add(int8_t interface_id, uint8_t attribute_index) {
+void etx_neighbor_add(int8_t interface_id, uint8_t attribute_index)
+{
 
-    tr_debug("Add attribute %u", attribute_index);
+    //tr_debug("Add attribute %u", attribute_index);
     uint16_t stored_diff_etx;
     etx_storage_t *entry = etx_storage_entry_get(interface_id, attribute_index);
     if (entry && etx_info.callback_ptr) {
@@ -620,4 +795,31 @@ void etx_neighbor_add(int8_t interface_id, uint8_t attribute_index) {
                                   attribute_index);
         }
     }
+}
+
+void etx_cache_timer(int8_t interface_id, uint16_t seconds_update)
+{
+    if (!etx_info.cache_sample_requested) {
+        return;
+    }
+
+    protocol_interface_info_entry_t *interface = protocol_stack_interface_info_get_by_id(interface_id);
+    if (!interface || !mac_neighbor_info(interface)) {
+        return;
+    }
+
+    ns_list_foreach(mac_neighbor_table_entry_t, neighbour, &mac_neighbor_info(interface)->neighbour_list) {
+
+        etx_storage_t *etx_entry = etx_storage_entry_get(interface_id, neighbour->index);
+
+        if (!etx_entry || etx_entry->tmp_etx) {
+            continue;
+        }
+        etx_sample_storage_t *storage = etx_info.etx_cache_storage_list + neighbour->index;
+
+        if (etx_update_possible(storage, etx_entry, seconds_update)) {
+            etx_calculation(etx_entry, storage->attempts_count, storage->received_acks, neighbour->index);
+        }
+    }
+
 }

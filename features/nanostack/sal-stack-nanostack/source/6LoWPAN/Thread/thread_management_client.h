@@ -45,6 +45,7 @@
 
 #include <ns_types.h>
 #include "thread_management_if.h"
+#include "net_interface.h"
 
 #define TRACE_GROUP_THREAD_MANAGEMENT_CLIENT "TMFs"
 
@@ -64,12 +65,6 @@ void thread_management_client_init(int8_t interface_id);
  * When this is called all addressed assigned by this module are removed from stack.
  */
 void thread_management_client_delete(int8_t interface_id);
-
-/** Get service id of management service.
- *
- * When using Coap Management port service this service is the only instance used to make client transactions.
- */
-int8_t thread_management_client_service_id_get(int8_t interface_id);
 
 /** Router id handler callback.
  *
@@ -213,9 +208,43 @@ int thread_management_client_provision_request(int8_t interface_id, uint8_t *dst
  */
 void thread_management_client_proactive_an(int8_t interface_id, const uint8_t address[16], const uint16_t rloc, const uint8_t ml_eid[8], const uint8_t dst_addr[16]);
 
-/** Kill pending COAP requests.
+/** Delete COAP message .
+ *
+ * Delete COAP message that is sent to COAP service.
+ *
+ *  \param interface_id interface id of this Thread instance.
+ *  \param coap_message_id COAP message to be deleted.
+ */
+void thread_management_client_coap_message_delete(int8_t interface_id, uint16_t coap_message_id);
+
+/** Clear old partition data.
+ *
+ * Clear data related to old partition, like pending COAP transactions.
  *
  *  \param interface_id interface id of this Thread instance.
  */
-void thread_management_client_pending_coap_request_kill(int8_t interface_id);
+void thread_management_client_old_partition_data_clean(int8_t interface_id);
+
+#ifdef HAVE_THREAD_V2
+/** Send address notification message.
+ *
+ * Sends address notification message
+ *
+ *  \param interface_id interface id of this Thread instance.
+ */
+void thread_management_client_addr_ntf_send(int8_t interface_id, uint8_t *destination_address, const uint8_t *addr_data_ptr, uint8_t bbr_status);
+/** Send multicast registration message
+ *
+ * include all the addresses that are registered to the bbr
+ *
+ *  \param interface_id interface id of this Thread instance.
+ */
+int thread_management_client_mlr_req_send(int8_t interface_id, const uint8_t br_addr[16], const uint8_t *address, uint8_t address_len);
+#else
+
+#define thread_management_client_addr_ntf_send(interface_id, destination_address, addr_data_ptr, bbr_status) (void(0))
+#define thread_management_client_mlr_req_send(interface_id, br_addr, address, address_len) (void(0))
+#endif
+
+
 #endif /* THREAD_MANAGEMENT_CLIENT_H_ */

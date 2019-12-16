@@ -50,6 +50,7 @@ typedef enum {
     LPUART_1 = (int)LPUART1_BASE
 } UARTName;
 
+#define DEVICE_SPI_COUNT 2
 typedef enum {
     SPI_1 = (int)SPI1_BASE,
     SPI_3 = (int)SPI3_BASE
@@ -74,6 +75,10 @@ typedef enum {
 typedef enum {
     QSPI_1 = (int)QSPI_R_BASE,
 } QSPIName;
+
+typedef enum {
+    USB_FS = (int)USB_BASE,
+} USBName;
 
 #ifdef __cplusplus
 }

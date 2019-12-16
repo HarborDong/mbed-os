@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2018 ARM Limited. All rights reserved.
+ * SPDX-License-Identifier: Apache-2.0
+ * Licensed under the Apache License, Version 2.0 (the License); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an AS IS BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 #include "LoWPANNDInterface.h"
 #include "include/nd_tasklet.h"
 #include "callback_handler.h"
@@ -8,8 +24,7 @@
 #include "ns_trace.h"
 #define TRACE_GROUP "nslp"
 
-class Nanostack::LoWPANNDInterface : public Nanostack::MeshInterface
-{
+class Nanostack::LoWPANNDInterface : public Nanostack::MeshInterface {
 public:
     virtual nsapi_error_t bringup(bool dhcp, const char *ip,
                                   const char *netmask, const char *gw,
@@ -18,7 +33,7 @@ public:
     virtual nsapi_error_t bringdown();
     virtual char *get_gateway(char *buf, nsapi_size_t buflen);
 
-    friend Nanostack;
+    friend class Nanostack;
     friend class ::LoWPANNDInterface;
 private:
     LoWPANNDInterface(NanostackRfPhy &phy) : MeshInterface(phy) { }
@@ -29,13 +44,13 @@ private:
 
 Nanostack::LoWPANNDInterface *LoWPANNDInterface::get_interface() const
 {
-    return static_cast<Nanostack::LoWPANNDInterface*>(_interface);
+    return static_cast<Nanostack::LoWPANNDInterface *>(_interface);
 }
 
 nsapi_error_t LoWPANNDInterface::do_initialize()
 {
     if (!_interface) {
-        _interface = new (nothrow) Nanostack::LoWPANNDInterface(*_phy);
+        _interface = new (std::nothrow) Nanostack::LoWPANNDInterface(*_phy);
         if (!_interface) {
             return NSAPI_ERROR_NO_MEMORY;
         }
@@ -77,11 +92,7 @@ nsapi_error_t Nanostack::LoWPANNDInterface::bringup(bool dhcp, const char *ip,
 
     if (blocking) {
         // wait connection for ever
-        int32_t count = connect_semaphore.wait(osWaitForever);
-
-        if (count <= 0) {
-            return NSAPI_ERROR_DHCP_FAILURE; // sort of...
-        }
+        connect_semaphore.acquire();
     }
     return 0;
 
@@ -156,15 +167,31 @@ char *Nanostack::LoWPANNDInterface::get_gateway(char *buf, nsapi_size_t buflen)
 
 bool LoWPANNDInterface::getRouterIpAddress(char *address, int8_t len)
 {
-    return _interface->get_gateway(address, len);
+    SocketAddress sock_addr;
+    if (_interface->get_gateway(&sock_addr) == NSAPI_ERROR_OK) {
+        strncpy(address, sock_addr.get_ip_address(), len);
+        return true;
+    }
+    return false;
 }
 
 #define LOWPAN 0x2345
 #if MBED_CONF_NSAPI_DEFAULT_MESH_TYPE == LOWPAN && DEVICE_802_15_4_PHY
 MBED_WEAK MeshInterface *MeshInterface::get_target_default_instance()
 {
-    static LoWPANNDInterface lowpan(&NanostackRfPhy::get_default_instance());
-
-    return &lowpan;
+    static bool inited;
+    static LoWPANNDInterface interface;
+    singleton_lock();
+    if (!inited) {
+        nsapi_error_t result = interface.initialize(&NanostackRfPhy::get_default_instance());
+        if (result != 0) {
+            tr_error("LoWPANND initialize failed: %d", result);
+            singleton_unlock();
+            return NULL;
+        }
+        inited = true;
+    }
+    singleton_unlock();
+    return &interface;
 }
 #endif

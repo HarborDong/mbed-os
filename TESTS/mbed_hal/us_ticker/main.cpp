@@ -22,7 +22,7 @@
 
 #if !DEVICE_USTICKER
 #error [NOT_SUPPORTED] test not supported
-#endif
+#else
 
 using namespace utest::v1;
 
@@ -32,8 +32,23 @@ void us_ticker_info_test()
     const ticker_info_t *p_ticker_info = us_ticker_get_info();
 
     TEST_ASSERT(p_ticker_info->frequency >= 250000);
-    TEST_ASSERT(p_ticker_info->frequency <= 8000000);
+
+    switch (p_ticker_info->bits) {
+        case 32:
+            TEST_ASSERT(p_ticker_info->frequency <= 100000000);
+            break;
+
+        default:
+            TEST_ASSERT(p_ticker_info->frequency <= 8000000);
+            break;
+    }
+
     TEST_ASSERT(p_ticker_info->bits >= 16);
+
+#ifdef US_TICKER_PERIOD_NUM
+    TEST_ASSERT_UINT32_WITHIN(1, 1000000 * US_TICKER_PERIOD_DEN / US_TICKER_PERIOD_NUM, p_ticker_info->frequency);
+    TEST_ASSERT_EQUAL_UINT32(US_TICKER_MASK, ((uint64_t)1 << p_ticker_info->bits) - 1);
+#endif
 }
 
 utest::v1::status_t test_setup(const size_t number_of_cases)
@@ -52,3 +67,5 @@ int main()
 {
     return !Harness::run(specification);
 }
+
+#endif // !DEVICE_USTICKER

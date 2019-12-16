@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2018 ARM Limited. All rights reserved.
+ * SPDX-License-Identifier: Apache-2.0
+ * Licensed under the Apache License, Version 2.0 (the License); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an AS IS BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 #include "ThreadInterface.h"
 #include "include/thread_tasklet.h"
 #include "callback_handler.h"
@@ -7,15 +23,14 @@
 #include "ns_trace.h"
 #define TRACE_GROUP "nsth"
 
-class Nanostack::ThreadInterface : public Nanostack::MeshInterface
-{
+class Nanostack::ThreadInterface : public Nanostack::MeshInterface {
 public:
     virtual nsapi_error_t bringup(bool dhcp, const char *ip,
                                   const char *netmask, const char *gw,
                                   nsapi_ip_stack_t stack = IPV6_STACK,
                                   bool blocking = true);
     virtual nsapi_error_t bringdown();
-    friend Nanostack;
+    friend class Nanostack;
     friend class ::ThreadInterface;
 private:
     ThreadInterface(NanostackRfPhy &phy) : MeshInterface(phy), eui64_set(false) { }
@@ -73,13 +88,13 @@ private:
 
 Nanostack::ThreadInterface *ThreadInterface::get_interface() const
 {
-    return static_cast<Nanostack::ThreadInterface*>(_interface);
+    return static_cast<Nanostack::ThreadInterface *>(_interface);
 }
 
 nsapi_error_t ThreadInterface::do_initialize()
 {
     if (!_interface) {
-        _interface = new (nothrow) Nanostack::ThreadInterface(*_phy);
+        _interface = new (std::nothrow) Nanostack::ThreadInterface(*_phy);
         if (!_interface) {
             return NSAPI_ERROR_NO_MEMORY;
         }
@@ -132,15 +147,8 @@ nsapi_error_t Nanostack::ThreadInterface::bringup(bool dhcp, const char *ip,
     // -end devices will get connectivity once attached to existing network
     // -devices without network settings gets connectivity once commissioned and attached to network
     _connect_status = NSAPI_STATUS_CONNECTING;
-    if (_connection_status_cb) {
-        _connection_status_cb(NSAPI_EVENT_CONNECTION_STATUS_CHANGE, NSAPI_STATUS_CONNECTING);
-    }
     if (_blocking) {
-        int32_t count = connect_semaphore.wait(osWaitForever);
-
-        if (count <= 0) {
-            return NSAPI_ERROR_DHCP_FAILURE; // sort of...
-        }
+        connect_semaphore.acquire();
     }
     return 0;
 }
@@ -254,10 +262,22 @@ mesh_error_t Nanostack::ThreadInterface::device_pskd_set(const char *pskd)
 
 #define THREAD 0x2345
 #if MBED_CONF_NSAPI_DEFAULT_MESH_TYPE == THREAD && DEVICE_802_15_4_PHY
+
 MBED_WEAK MeshInterface *MeshInterface::get_target_default_instance()
 {
-    static ThreadInterface thread(&NanostackRfPhy::get_default_instance());
-
-    return &thread;
+    static bool inited;
+    static ThreadInterface interface;
+    singleton_lock();
+    if (!inited) {
+        nsapi_error_t result = interface.initialize(&NanostackRfPhy::get_default_instance());
+        if (result != 0) {
+            tr_error("Thread initialize failed: %d", result);
+            singleton_unlock();
+            return NULL;
+        }
+        inited = true;
+    }
+    singleton_unlock();
+    return &interface;
 }
 #endif

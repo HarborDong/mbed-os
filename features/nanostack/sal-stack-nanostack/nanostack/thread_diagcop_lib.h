@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2017, Arm Limited and affiliates.
+ * Copyright (c) 2015-2018, Arm Limited and affiliates.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -55,7 +55,8 @@
 #define DIAGCOP_TLV_SUPPLY_VOLTAGE                          15  /**< Can not reset*/
 #define DIAGCOP_TLV_CHILD_TABLE                             16  /**< Can not reset*/
 #define DIAGCOP_TLV_CHANNEL_PAGES                           17  /**< Can not reset*/
-#define DIAGCOP_TLV_TYPE_LIST                               18  /**< List type*/
+#define DIAGCOP_TLV_TYPE_LIST                               18  /**< Cannot reset*/
+#define DIAGCOP_TLV_MAX_CHILD_TIMEOUT                       19  /**< Cannot reset*/
 
 /**
  * \brief Write array TLV.

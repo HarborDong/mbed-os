@@ -13,6 +13,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+#if !defined(MBED_CONF_RTOS_PRESENT)
+#error [NOT_SUPPORTED] filesystem test cases require a RTOS to run
+#else
 
 #include "mbed.h"
 #include "greentea-client/test_env.h"
@@ -97,7 +100,7 @@ void test_file_tests()
     TEST_ASSERT_EQUAL(0, res);
 }
 
-void write_file_data (char count)
+void write_file_data(char count)
 {
 
     char filename[10];
@@ -125,7 +128,7 @@ void write_file_data (char count)
     TEST_ASSERT_EQUAL(0, res);
 }
 
-void read_file_data (char count)
+void read_file_data(char count)
 {
     char filename[10];
     uint8_t rbuffer[MBED_TEST_BUFFER];
@@ -154,6 +157,9 @@ void read_file_data (char count)
 
 void test_thread_access_test()
 {
+    char *dummy = new (std::nothrow) char[OS_STACK_SIZE * MBED_THREAD_COUNT];
+    delete[] dummy;
+    TEST_SKIP_UNLESS_MESSAGE(dummy, "Not enough memory to run test");
 
     Thread *data[MBED_THREAD_COUNT];
     int res = bd.init();
@@ -204,3 +210,4 @@ int main()
 {
     return !Harness::run(specification);
 }
+#endif // !defined(MBED_CONF_RTOS_PRESENT)

@@ -29,6 +29,11 @@
 extern "C" {
 #endif
 
+/** PHY_LINK_CCA_PREPARE status definitions */
+#define PHY_TX_NOT_ALLOWED  -1      /**< TX not allowed. Do not continue to CCA process. */
+#define PHY_TX_ALLOWED      0       /**< TX allowed. Continue to CCA process. */
+#define PHY_RESTART_CSMA    1       /**< Restart CSMA-CA timer. CSMA-CA period must be calculated using given backoff time (PHY_EXTENSION_SET_CSMA_PARAMETERS) */
+
 /** Interface states */
 typedef enum {
     PHY_INTERFACE_RESET,            /**< Reset PHY driver and set to idle. */
@@ -45,8 +50,15 @@ typedef enum {
     PHY_LINK_TX_SUCCESS,        /**< MAC TX complete. MAC will a make decision to enter wait ACK or TX done state. */
     PHY_LINK_TX_FAIL,           /**< Link TX process fail. */
     PHY_LINK_CCA_FAIL,          /**< RF link CCA process fail. */
-    PHY_LINK_CCA_PREPARE,       /**< RX Tx timeout prepare operation like channel switch to Tx channel from Receive one If operation fail must return not zero*/
+    PHY_LINK_CCA_OK,            /**< RF link CCA process ok. */
+    PHY_LINK_CCA_PREPARE,       /**< Prepare for CCA after CSMA-CA: changes to CCA channel and gives permission to TX. See PHY_LINK_CCA_PREPARE status definitions for return values */
 } phy_link_tx_status_e;
+
+/** MAC filtering modes. Set corresponding bit to 1 (1 << MAC_FRAME_VERSION_X) in PHY_EXTENSION_FILTERING_SUPPORT request when PHY can handle the filtering of this frame type.
+ *  NOTE: Currently MAC supports filtering and Acking only 802.15.4-2015 frames. Any other frame version must be filtered and Acked by PHY with either HW or SW solution. */
+typedef enum {
+    MAC_FRAME_VERSION_2 = 2          /**< 802.15.4-2015 */
+} phy_link_filters_e;
 
 /** Extension types */
 typedef enum {
@@ -64,6 +76,10 @@ typedef enum {
     PHY_EXTENSION_GET_TIMESTAMP, /**<  Read 32-bit constant monotonic time stamp in us */
     PHY_EXTENSION_SET_CSMA_PARAMETERS, /**< CSMA parameter's are given by phy_csma_params_t structure remember type cast uint8_t pointer to structure type*/
     PHY_EXTENSION_GET_SYMBOLS_PER_SECOND, /**<  Read Symbols per seconds which will help to convert symbol time to real time  */
+    PHY_EXTENSION_SET_RF_CONFIGURATION,  /**<  Set RF configuration using phy_rf_channel_configuration_s structure */
+    PHY_EXTENSION_FILTERING_SUPPORT, /**<  Return filtering modes that can be supported by the PHY driver. See phy_link_filters_e */
+    PHY_EXTENSION_SET_TX_POWER, /**<  Set TX output power which is given as percentage of maximum. 0 is the lowest possible TX power and 100 is the highest possible TX power */
+    PHY_EXTENSION_SET_CCA_THRESHOLD /**<  Set CCA threshold which is given as percentage of maximum threshold. 0 is the lowest(strictest) possible threshold and 100 is the highest possible threshold */
 } phy_extension_type_e;
 
 /** Address types */
@@ -81,6 +97,7 @@ typedef enum phy_link_type_e {
     PHY_LINK_15_4_SUBGHZ_TYPE,      /**< Standard 802.15.4 subGHz radio 868 /915MHz. */
     PHY_LINK_TUN,                   /**< Tunnel interface for Linux TUN, RF network driver over serial bus or just basic application to application data flow. */
     PHY_LINK_SLIP,                  /**< Generic SLIP driver which just forward SLIP payload */
+    PHY_LINK_PPP,                   /**< PPP */
 } phy_link_type_e;
 
 /** Data layers */
@@ -125,18 +142,17 @@ typedef struct phy_csma_params {
 } phy_csma_params_t;
 
 /** PHY modulation scheme */
-typedef enum phy_modulation_e
-{
+typedef enum phy_modulation_e {
     M_OFDM,     ///< QFDM
     M_OQPSK,    ///< OQPSK
     M_BPSK,     ///< BPSK
     M_GFSK,     ///< GFSK
+    M_2FSK,     ///< 2FSK
     M_UNDEFINED ///< UNDEFINED
 } phy_modulation_e;
 
 /** Channel page numbers */
-typedef enum
-{
+typedef enum {
     CHANNEL_PAGE_0 = 0,     ///< Page 0
     CHANNEL_PAGE_1 = 1,     ///< Page 1
     CHANNEL_PAGE_2 = 2,     ///< Page 2
@@ -148,22 +164,35 @@ typedef enum
     CHANNEL_PAGE_10 = 10    ///< Page 10
 } channel_page_e;
 
+/** Modulation index */
+typedef enum {
+    MODULATION_INDEX_0_5 = 0,   ///< Modulation index 0.5
+    MODULATION_INDEX_1_0 = 1,   ///< Modulation index 1.0
+    MODULATION_INDEX_UNDEFINED  ///< Modulation index undefined
+} phy_modulation_index_e;
+
 /** Channel configuration */
-typedef struct phy_rf_channel_configuration_s
-{
-    uint32_t channel_0_center_frequency;    ///< Center frequency
-    uint32_t channel_spacing;               ///< Channel spacing
-    uint32_t datarate;                      ///< Data rate
-    uint16_t number_of_channels;            ///< Number of channels
-    phy_modulation_e modulation;            ///< Modulation scheme
+typedef struct phy_rf_channel_configuration_s {
+    uint32_t channel_0_center_frequency;        ///< Center frequency
+    uint32_t channel_spacing;                   ///< Channel spacing
+    uint32_t datarate;                          ///< Data rate
+    uint16_t number_of_channels;                ///< Number of channels
+    phy_modulation_e modulation;                ///< Modulation scheme
+    phy_modulation_index_e modulation_index;    ///< Modulation index
 } phy_rf_channel_configuration_s;
 
 /** Channel page configuration */
-typedef struct phy_device_channel_page_s
-{
+typedef struct phy_device_channel_page_s {
     channel_page_e channel_page;            ///< Channel page
     const phy_rf_channel_configuration_s *rf_channel_configuration; ///< Pointer to channel configuration
 } phy_device_channel_page_s;
+
+/** PHY statistics */
+typedef struct phy_rf_statistics_s {
+    uint32_t crc_fails;        ///< CRC failures
+    uint32_t tx_timeouts;      ///< transmission timeouts
+    uint32_t rx_timeouts;      ///< reception timeouts
+} phy_rf_statistics_s;
 
 /** Virtual data request */
 typedef struct virtual_data_req_s {
@@ -202,7 +231,7 @@ typedef int8_t arm_net_phy_tx_done_fn(int8_t driver_id, uint8_t tx_handle, phy_l
  * @param driver_id ID of driver which received data
  * @return 0 if success, error otherwise
  */
-typedef int8_t arm_net_virtual_rx_fn(const uint8_t *data_ptr, uint16_t data_len,int8_t driver_id);
+typedef int8_t arm_net_virtual_rx_fn(const uint8_t *data_ptr, uint16_t data_len, int8_t driver_id);
 
 /**
  * @brief arm_net_virtual_tx TX callback set by serial MAC. Used to send data.
@@ -210,7 +239,7 @@ typedef int8_t arm_net_virtual_rx_fn(const uint8_t *data_ptr, uint16_t data_len,
  * @param driver_id Id of the driver to be used.
  * @return 0 if success, error otherwise
  */
-typedef int8_t arm_net_virtual_tx_fn(const virtual_data_req_t *data_req,int8_t driver_id);
+typedef int8_t arm_net_virtual_tx_fn(const virtual_data_req_t *data_req, int8_t driver_id);
 
 /**
  * @brief arm_net_virtual_config Configuration receive callback set by upper layer. Used to receive internal configuration parameters.
@@ -240,8 +269,7 @@ typedef int8_t arm_net_virtual_config_tx_fn(int8_t driver_id, const uint8_t *dat
 typedef int8_t arm_net_virtual_confirmation_rx_fn(int8_t driver_id, const uint8_t *data, uint16_t length);
 
 /** Device driver structure */
-typedef struct phy_device_driver_s
-{
+typedef struct phy_device_driver_s {
     phy_link_type_e link_type;                                      /**< Define driver types. */
     driver_data_request_e data_request_layer;                       /**< Define interface data OUT protocol. */
     uint8_t *PHY_MAC;                                               /**< Pointer to 64-bit or 48-bit MAC address. */
@@ -251,7 +279,7 @@ typedef struct phy_device_driver_s
     uint8_t phy_header_length;                                      /**< Define PHY driver needed header length before PDU. */
     int8_t (*state_control)(phy_interface_state_e, uint8_t);        /**< Function pointer for control PHY driver state. */
     int8_t (*tx)(uint8_t *, uint16_t, uint8_t, data_protocol_e);    /**< Function pointer for PHY driver write operation. */
-    int8_t (*address_write)(phy_address_type_e , uint8_t *);        /**< Function pointer for PHY driver address write. */
+    int8_t (*address_write)(phy_address_type_e, uint8_t *);         /**< Function pointer for PHY driver address write. */
     int8_t (*extension)(phy_extension_type_e, uint8_t *);           /**< Function pointer for PHY driver extension control. */
     const phy_device_channel_page_s *phy_channel_pages;             /**< Pointer to channel page list */
 
@@ -265,6 +293,7 @@ typedef struct phy_device_driver_s
     arm_net_virtual_config_tx_fn *virtual_config_tx_cb;             /**< Virtual config send callback. Initialized by \ref arm_net_phy_register(). */
     arm_net_virtual_confirmation_rx_fn *virtual_confirmation_rx_cb; /**< Virtual confirmation receive callback. Initialized by \ref arm_net_phy_register(). */
     uint16_t tunnel_type; /**< Tun driver type. */
+    phy_rf_statistics_s *phy_rf_statistics;                         /**< PHY statistics. */
 } phy_device_driver_s;
 
 

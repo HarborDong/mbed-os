@@ -19,12 +19,16 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
  */
+
+/** \addtogroup storage */
+/** @{*/
+
 #ifndef MBED_MBR_BLOCK_DEVICE_H
 #define MBED_MBR_BLOCK_DEVICE_H
 
 #include "BlockDevice.h"
-#include "mbed.h"
 
+namespace mbed {
 
 /** Additional error codes used for MBR records
  */
@@ -37,70 +41,23 @@ enum {
 /** Block device for managing a Master Boot Record
  *  https://en.wikipedia.org/wiki/Master_boot_record
  *
- *  Here is an example of partitioning a heap backed block device
- *  @code
- *  #include "mbed.h"
- *  #include "HeapBlockDevice.h"
- *  #include "MBRBlockDevice.h"
- *
- *  // Create a block device with 64 blocks of size 512
- *  HeapBlockDevice mem(64*512, 512);
- *
- *  // Partition into two partitions with ~half the blocks
- *  MBRBlockDevice::partition(&mem, 1, 0x83, 0*512, 32*512);
- *  MBRBlockDevice::partition(&mem, 2, 0x83, 32*512);
- *
- *  // Create a block device that maps to the first 32 blocks (excluding MBR block)
- *  MBRBlockDevice part1(&mem, 1);
- *
- *  // Create a block device that maps to the last 32 blocks
- *  MBRBlockDevice part2(&mem, 2);
- *  @endcode
- *
- *  Here is a more realistic example where the MBRBlockDevice is used
- *  to partition a region of space on an SD card. When plugged into a computer,
- *  the partitions will be recognized appropriately.
- *  @code
- *  #include "mbed.h"
- *  #include "SDBlockDevice.h"
- *  #include "MBRBlockDevice.h"
- *  #include "FATFileSystem.h"
- *
- *  // Create an SD card
- *  SDBlockDevice sd(s0, s1, s2, s3);
- *
- *  // Create a partition with 1 GB of space
- *  MBRBlockDevice::partition(&sd, 1, 0x83, 0, 1024*1024);
- *
- *  // Create the block device that represents the partition
- *  MBRBlockDevice part1(&sd, 1);
- *
- *  // Format the partition with a FAT filesystem
- *  FATFileSystem::format(&part1);
- *
- *  // Create the FAT filesystem instance, files can now be written to
- *  // the FAT filesystem in partition 1
- *  FATFileSystem fat("fat", &part1);
- *  @endcode
- *
  *  @note
  *  The MBR partition table is relatively limited:
  *  - At most 4 partitions are supported
  *  - Extended partitions are currently not supported and will error during init
  */
-class MBRBlockDevice : public BlockDevice
-{
+class MBRBlockDevice : public BlockDevice {
 public:
     /** Format the MBR to contain the following partition
      *
      *  @param bd       Block device to partition
      *  @param part     Partition to use, 1-4
-     *  @param type     8-bit partition type to identitfy partition's contents
-     *  @param start    Start block address to map to block 0 of partition, 
-     *                  negative addresses are calculated from the end of the
+     *  @param type     8-bit partition type to identify partition contents
+     *  @param start    Start block address to map to block 0 of partition.
+     *                  Negative addresses are calculated from the end of the
      *                  underlying block devices. Block 0 is implicitly ignored
      *                  from the range to store the MBR.
-     *  @return         0 on success or a negative error code on failure
+     *  @return         0 on success or a negative error code on failure.
      *  @note This is the same as partition(bd, part, type, start, bd->size())
      */
     static int partition(BlockDevice *bd, int part, uint8_t type, bd_addr_t start);
@@ -109,15 +66,15 @@ public:
      *
      *  @param bd       Block device to partition
      *  @param part     Partition to use, 1-4
-     *  @param type     8-bit partition type to identitfy partition's contents
-     *  @param start    Start block address to map to block 0 of partition, 
+     *  @param type     8-bit partition type to identify partition contents
+     *  @param start    Start block address to map to block 0 of partition,
      *                  negative addresses are calculated from the end of the
      *                  underlying block devices. Block 0 is implicitly ignored
      *                  from the range to store the MBR.
-     *  @param stop     End block address to mark the end of the partition,
-     *                  this block is not mapped, negative addresses are calculated
+     *  @param stop     End block address to mark the end of the partition.
+     *                  This block is not mapped: negative addresses are calculated
      *                  from the end of the underlying block device.
-     *  @return         0 on success or a negative error code on failure
+     *  @return         0 on success or a negative error code on failure.
      */
     static int partition(BlockDevice *bd, int part, uint8_t type, bd_addr_t start, bd_addr_t stop);
 
@@ -155,7 +112,7 @@ public:
      *  @param buffer   Buffer to read blocks into
      *  @param addr     Address of block to begin reading from
      *  @param size     Size to read in bytes, must be a multiple of read block size
-     *  @return         0 on success, negative error code on failure
+     *  @return         0 on success or a negative error code on failure
      */
     virtual int read(void *buffer, bd_addr_t addr, bd_size_t size);
 
@@ -166,7 +123,7 @@ public:
      *  @param buffer   Buffer of data to write to blocks
      *  @param addr     Address of block to begin writing to
      *  @param size     Size to write in bytes, must be a multiple of program block size
-     *  @return         0 on success, negative error code on failure
+     *  @return         0 on success or a negative error code on failure
      */
     virtual int program(const void *buffer, bd_addr_t addr, bd_size_t size);
 
@@ -177,7 +134,7 @@ public:
      *
      *  @param addr     Address of block to begin erasing
      *  @param size     Size to erase in bytes, must be a multiple of erase block size
-     *  @return         0 on success, negative error code on failure
+     *  @return         0 on success or a negative error code on failure
      */
     virtual int erase(bd_addr_t addr, bd_size_t size);
 
@@ -246,6 +203,12 @@ public:
      */
     virtual int get_partition_number() const;
 
+    /** Get the BlockDevice class type.
+     *
+     *  @return         A string represent the BlockDevice class type.
+     */
+    virtual const char *get_type() const;
+
 protected:
     BlockDevice *_bd;
     bd_size_t _offset;
@@ -256,5 +219,13 @@ protected:
     bool _is_initialized;
 };
 
+} // namespace mbed
+
+// Added "using" for backwards compatibility
+#ifndef MBED_NO_GLOBAL_USING_DIRECTIVE
+using mbed::MBRBlockDevice;
+#endif
 
 #endif
+
+/** @}*/

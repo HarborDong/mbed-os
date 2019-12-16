@@ -1,60 +1,78 @@
 /*
+ * Copyright (c) 2019-2020, Nuvoton Technology Corporation
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+/*
  * Nuvoton M2351 GCC linker script file
  */
 
-/* Default flash/SRAM partition
- *
- * Default flash partition:
- *   Secure:        256KiB
- *   Non-secure:    256KiB
- * 
- * Default SRAM partition:
- *   Secure:        32KiB
- *   Non-secure:    64KiB
- */
-#if defined(__DOMAIN_NS) && __DOMAIN_NS
+#include "../partition_M2351_mem.h"
+
+#ifndef NU_TZ_NSC_SIZE
+#define NU_TZ_NSC_SIZE          (0x1000)
+#endif
+
+#if defined(DOMAIN_NS) && DOMAIN_NS
 
 #ifndef MBED_APP_START
-#define MBED_APP_START      0x10040000
+#define MBED_APP_START          NU_ROM_START_NS
 #endif
 
 #ifndef MBED_APP_SIZE
-#define MBED_APP_SIZE       0x40000
+#define MBED_APP_SIZE           NU_ROM_SIZE_NS
 #endif
 
-#ifndef MBED_RAM_START
-#define MBED_RAM_START      0x30008000
+#ifndef MBED_RAM_APP_START
+#define MBED_RAM_APP_START      NU_RAM_START_NS
 #endif
 
-#ifndef MBED_RAM_SIZE
-#define MBED_RAM_SIZE       0x10000
+#ifndef MBED_RAM_APP_SIZE
+#define MBED_RAM_APP_SIZE       NU_RAM_SIZE_NS
+#endif
+
+#if !defined(MBED_BOOT_STACK_SIZE)
+#define MBED_BOOT_STACK_SIZE    0x400
 #endif
 
 #else
 
 #ifndef MBED_APP_START
-#define MBED_APP_START      0x0
+#define MBED_APP_START          NU_ROM_START_S
 #endif
 
 #ifndef MBED_APP_SIZE
-#define MBED_APP_SIZE       0x40000
+#define MBED_APP_SIZE           NU_ROM_SIZE_S
 #endif
 
-#ifndef MBED_RAM_START
-#define MBED_RAM_START      0x20000000
+#ifndef MBED_RAM_APP_START
+#define MBED_RAM_APP_START      NU_RAM_START_S
 #endif
 
-#ifndef MBED_RAM_SIZE
-#define MBED_RAM_SIZE       0x8000
+#ifndef MBED_RAM_APP_SIZE
+#define MBED_RAM_APP_SIZE       NU_RAM_SIZE_S
+#endif
+
+#ifndef MBED_BOOT_STACK_SIZE
+#define MBED_BOOT_STACK_SIZE    0x400
 #endif
 
 #endif
 
-#if defined(__DOMAIN_NS) && __DOMAIN_NS
-StackSize = 0x800;
-#else
-StackSize = 0x800;
-#endif
+StackSize = MBED_BOOT_STACK_SIZE;
 
 /* Requirements for NSC location
  *
@@ -66,18 +84,15 @@ StackSize = 0x800;
 #ifndef NU_TZ_NSC_START
 #define NU_TZ_NSC_START         (MBED_APP_START + MBED_APP_SIZE - 0x2000 - NU_TZ_NSC_SIZE)
 #endif
-#ifndef NU_TZ_NSC_SIZE
-#define NU_TZ_NSC_SIZE          0x1000
-#endif
 
 
-#if defined(__DOMAIN_NS) && __DOMAIN_NS
+#if defined(DOMAIN_NS) && DOMAIN_NS
 
 MEMORY
 {
   VECTORS (rx)          : ORIGIN = MBED_APP_START,          LENGTH = 0x00000400
   FLASH (rx)            : ORIGIN = MBED_APP_START + 0x400,  LENGTH = MBED_APP_SIZE - 0x400
-  RAM_INTERN (rwx)      : ORIGIN = MBED_RAM_START,          LENGTH = MBED_RAM_SIZE
+  RAM_INTERN (rwx)      : ORIGIN = MBED_RAM_APP_START,      LENGTH = MBED_RAM_APP_SIZE
 }
 
 #else
@@ -87,7 +102,7 @@ MEMORY
   VECTORS (rx)          : ORIGIN = MBED_APP_START,          LENGTH = 0x00000400
   FLASH (rx)            : ORIGIN = MBED_APP_START + 0x400,  LENGTH = NU_TZ_NSC_START - MBED_APP_START - 0x400
   NSC_FLASH (rx)        : ORIGIN = NU_TZ_NSC_START,         LENGTH = NU_TZ_NSC_SIZE
-  RAM_INTERN (rwx)      : ORIGIN = MBED_RAM_START,          LENGTH = MBED_RAM_SIZE
+  RAM_INTERN (rwx)      : ORIGIN = MBED_RAM_APP_START,      LENGTH = MBED_RAM_APP_SIZE
 }
 
 #endif
@@ -132,7 +147,7 @@ SECTIONS
     {
         __vector_table = .;
         KEEP(*(.vector_table))
-         . = ALIGN(4);
+         . = ALIGN(8);
     } > VECTORS
 
     /* ensure that uvisor bss is at the beginning of memory */
@@ -164,7 +179,7 @@ SECTIONS
     .text :
     {
         /* uVisor code and data */
-        . = ALIGN(4);
+        . = ALIGN(8);
         __uvisor_main_start = .;
         *(.uvisor.main)
         __uvisor_main_end = .;
@@ -192,7 +207,7 @@ SECTIONS
         KEEP(*(.eh_frame*))
     } > FLASH
 
-#if (! defined(__DOMAIN_NS)) || (! __DOMAIN_NS)
+#if (! defined(DOMAIN_NS)) || (! DOMAIN_NS)
     /* Veneer$$CMSE : */
     .gnu.sgstubs :
     {
@@ -253,20 +268,20 @@ SECTIONS
         *(vtable)
         *(.data*)
 
-        . = ALIGN(4);
+        . = ALIGN(8);
         /* preinit data */
         PROVIDE_HIDDEN (__preinit_array_start = .);
         KEEP(*(.preinit_array))
         PROVIDE_HIDDEN (__preinit_array_end = .);
 
-        . = ALIGN(4);
+        . = ALIGN(8);
         /* init data */
         PROVIDE_HIDDEN (__init_array_start = .);
         KEEP(*(SORT(.init_array.*)))
         KEEP(*(.init_array))
         PROVIDE_HIDDEN (__init_array_end = .);
 
-        . = ALIGN(4);
+        . = ALIGN(8);
         /* finit data */
         PROVIDE_HIDDEN (__fini_array_start = .);
         KEEP(*(SORT(.fini_array.*)))

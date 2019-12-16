@@ -2,7 +2,8 @@
 /** \addtogroup hal */
 /** @{*/
 /* mbed Microcontroller Library
- * Copyright (c) 2018 ARM Limited
+ * Copyright (c) 2018-2019 ARM Limited
+ * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,6 +25,8 @@
 #include "hal/ticker_api.h"
 #include "hal/us_ticker_api.h"
 #include "drivers/Timeout.h"
+
+#include "platform/mbed_critical.h"
 
 
 class LowPowerTickerWrapper {
@@ -74,6 +77,9 @@ public:
      *
      * This stops to wrapper layer from using the microsecond ticker.
      * This should be called before using the low power ticker APIs directly.
+     *
+     * @warning: Make sure to suspend the LP ticker first (call ticker_suspend()),
+     * otherwise the behavior is undefined.
      */
     void suspend();
 

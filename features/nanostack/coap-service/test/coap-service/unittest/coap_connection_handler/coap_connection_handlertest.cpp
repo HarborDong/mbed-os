@@ -19,12 +19,10 @@
 
 TEST_GROUP(coap_connection_handler)
 {
-    void setup()
-    {
+    void setup() {
     }
 
-    void teardown()
-    {
+    void teardown() {
     }
 };
 
@@ -71,5 +69,15 @@ TEST(coap_connection_handler, test_socket_api_callbacks)
 TEST(coap_connection_handler, test_security_callbacks)
 {
     CHECK(test_security_callbacks());
+}
+
+TEST(coap_connection_handler, test_coap_connection_handler_msg_prevalidate_cb_read_and_set)
+{
+    CHECK(test_coap_connection_handler_msg_prevalidate_cb_read_and_set());
+}
+
+TEST(coap_connection_handler, test_coap_connection_handler_find_by_socket_port)
+{
+    CHECK(test_coap_connection_handler_find_by_socket_port());
 }
 

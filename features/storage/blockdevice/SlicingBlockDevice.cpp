@@ -15,6 +15,11 @@
  */
 
 #include "SlicingBlockDevice.h"
+#include "platform/mbed_assert.h"
+#include "stddef.h"
+#include <stdio.h>
+
+namespace mbed {
 
 
 SlicingBlockDevice::SlicingBlockDevice(BlockDevice *bd, bd_addr_t start, bd_addr_t stop)
@@ -22,6 +27,11 @@ SlicingBlockDevice::SlicingBlockDevice(BlockDevice *bd, bd_addr_t start, bd_addr
     , _start_from_end(false), _start(start)
     , _stop_from_end(false), _stop(stop)
 {
+    MBED_ASSERT(bd);
+    // SlicingBlockDevice(bd, 0,0) would use the full block, which does not make sense, it must be a programming eror.
+    // SlicingBlockDevice(bd, 100,100) would have no size, which is also a programming error.
+    MBED_ASSERT(start != stop);
+
     if ((int64_t)_start < 0) {
         _start_from_end = true;
         _start = -_start;
@@ -54,7 +64,9 @@ int SlicingBlockDevice::init()
     }
 
     // Check that block addresses are valid
-    MBED_ASSERT(_bd->is_valid_erase(_start, _stop - _start));
+    if (!is_valid_erase(0, _stop - _start)) {
+        return BD_ERROR_DEVICE_ERROR;
+    }
 
     return 0;
 }
@@ -71,20 +83,41 @@ int SlicingBlockDevice::sync()
 
 int SlicingBlockDevice::read(void *b, bd_addr_t addr, bd_size_t size)
 {
-    MBED_ASSERT(is_valid_read(addr, size));
+    if (!is_valid_read(addr, size)) {
+        return BD_ERROR_DEVICE_ERROR;
+    }
     return _bd->read(b, addr + _start, size);
 }
 
 int SlicingBlockDevice::program(const void *b, bd_addr_t addr, bd_size_t size)
 {
-    MBED_ASSERT(is_valid_program(addr, size));
+    if (!is_valid_program(addr, size)) {
+        return BD_ERROR_DEVICE_ERROR;
+    }
     return _bd->program(b, addr + _start, size);
 }
 
 int SlicingBlockDevice::erase(bd_addr_t addr, bd_size_t size)
 {
-    MBED_ASSERT(is_valid_erase(addr, size));
+    if (!is_valid_erase(addr, size)) {
+        return BD_ERROR_DEVICE_ERROR;
+    }
     return _bd->erase(addr + _start, size);
+}
+
+bool SlicingBlockDevice::is_valid_read(bd_addr_t addr, bd_size_t size) const
+{
+    return _bd->is_valid_read(_start + addr, size) && _start + addr + size <= _stop;
+}
+
+bool SlicingBlockDevice::is_valid_program(bd_addr_t addr, bd_size_t size) const
+{
+    return _bd->is_valid_program(_start + addr, size) && _start + addr + size <= _stop;
+}
+
+bool SlicingBlockDevice::is_valid_erase(bd_addr_t addr, bd_size_t size) const
+{
+    return _bd->is_valid_erase(_start + addr, size) && _start + addr + size <= _stop;
 }
 
 bd_size_t SlicingBlockDevice::get_read_size() const
@@ -99,7 +132,7 @@ bd_size_t SlicingBlockDevice::get_program_size() const
 
 bd_size_t SlicingBlockDevice::get_erase_size() const
 {
-    return _bd->get_erase_size();
+    return _bd->get_erase_size(_start);
 }
 
 bd_size_t SlicingBlockDevice::get_erase_size(bd_addr_t addr) const
@@ -116,3 +149,10 @@ bd_size_t SlicingBlockDevice::size() const
 {
     return _stop - _start;
 }
+
+const char *SlicingBlockDevice::get_type() const
+{
+    return _bd->get_type();
+}
+
+} // namespace mbed

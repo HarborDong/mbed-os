@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2018, Arm Limited and affiliates.
+ * Copyright (c) 2014-2019, Arm Limited and affiliates.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -42,7 +42,7 @@
 #include "eventOS_event.h"
 #include "common_functions.h"
 #include "socket_api.h"
-#include "Core/include/socket.h"
+#include "Core/include/ns_socket.h"
 #include "NWK_INTERFACE/Include/protocol.h"
 #include "Common_Protocols/ipv6.h"
 #include "6LoWPAN/Bootstraps/protocol_6lowpan.h"
@@ -53,11 +53,11 @@
 #include "6LoWPAN/Thread/thread_neighbor_class.h"
 #include "6LoWPAN/Thread/thread_nd.h"
 #include "6LoWPAN/Thread/thread_joiner_application.h"
-#include "6LoWPAN/Thread/thread_extension.h"
 #include "6LoWPAN/Thread/thread_resolution_client.h"
 #include "6LoWPAN/Thread/thread_resolution_server.h"
+#include "6LoWPAN/Thread/thread_bootstrap.h"
 #include "6LoWPAN/Thread/thread_bbr_api_internal.h"
-#include "6LoWPAN/Thread/thread_extension_bbr.h"
+#include "6LoWPAN/Thread/thread_bbr_commercial.h"
 #include "Service_Libs/mac_neighbor_table/mac_neighbor_table.h"
 #include "6LoWPAN/MAC/mac_helper.h"
 #include "Common_Protocols/icmpv6.h"
@@ -149,7 +149,7 @@ static void thread_nd_coap_notification_callback(int8_t interface_id, const uint
         if (old_entry_rloc != loc_addr) {
             uint8_t old_entry_ip[16];
             thread_addr_write_mesh_local_16(old_entry_ip, common_read_16_bit(entry->ll_address + 2), cur->thread_info);
-            tr_warn("Proactive address change %s %04x->%04x", trace_ipv6(ip_addr), old_entry_rloc, loc_addr);
+            tr_info("Proactive address change %s %04x->%04x", trace_ipv6(ip_addr), old_entry_rloc, loc_addr);
             thread_resolution_client_address_error(interface_id, old_entry_ip, ip_addr, ml_eid);
         }
     }
@@ -165,7 +165,7 @@ static void thread_nd_coap_notification_callback(int8_t interface_id, const uint
     }
 }
 
-static bool thread_nd_coap_transmit(protocol_interface_info_entry_t *cur, ipv6_neighbour_t *entry , uint8_t seq)
+static bool thread_nd_coap_transmit(protocol_interface_info_entry_t *cur, ipv6_neighbour_t *entry, uint8_t seq)
 {
 
     if (thread_resolution_client_resolve(cur->id, entry->ip_address, thread_nd_coap_response_callback) < 0) {
@@ -213,6 +213,7 @@ static mac_neighbor_table_entry_t *thread_nd_child_mleid_get(protocol_interface_
 
 static int thread_nd_address_query_lookup(int8_t interface_id, const uint8_t target_addr[static 16], uint16_t *rloc, uint16_t *addr_out, bool *proxy, uint32_t *last_transaction_time, uint8_t *mleid_ptr)
 {
+    (void) rloc;
     protocol_interface_info_entry_t *cur = protocol_stack_interface_info_get_by_id(interface_id);
     if (!cur) {
         return -1;
@@ -248,22 +249,22 @@ static int thread_nd_address_query_lookup(int8_t interface_id, const uint8_t tar
     /* Verify DHCP Server Status */
     bool can_route_of_mesh = false;
 
-    if (!nd_proxy_enabled_for_upstream(interface_id) ) {
+    if (!nd_proxy_enabled_for_upstream(interface_id)) {
         //ND proxy not enabled can not answer
         return -1;
     }
 
     // TODO needed for eternal border router applications can be removed later
-    if ( libdhcpv6_server_data_get_by_prefix_and_interfaceid(interface_id, target_addr) ){
+    if (libdhcpv6_server_data_get_by_prefix_and_interfaceid(interface_id, target_addr)) {
         can_route_of_mesh = true;
     }
 
     // Check if we are registered as border router in network data.
-    if(thread_bbr_routing_enabled(cur)) {
+    if (thread_bbr_routing_enabled(cur)) {
         can_route_of_mesh = true;
     }
 
-    if (thread_extension_bbr_nd_query_process(cur,target_addr, *rloc)){
+    if (thread_bbr_commercial_nd_query_process(cur, target_addr, *rloc)) {
         return -1;
     }
 
@@ -294,7 +295,7 @@ static void thread_nd_address_error(int8_t interface_id, const uint8_t ip_addr[1
     if_address_entry_t *addr_entry = addr_get_entry(cur, ip_addr);
     if (addr_entry && memcmp(ml_eid, cur->iid_slaac, 8)) {
         addr_duplicate_detected(cur, ip_addr);
-        thread_extension_address_generate(cur);
+        thread_bootstrap_dua_address_generate(cur, ip_addr, 64);
     }
 
     /* Scan IPv6 neighbour cache for registered entries of children */
@@ -379,8 +380,8 @@ buffer_t *thread_nd_snoop(protocol_interface_info_entry_t *cur, buffer_t *buf, c
     /* Packet must have been mesh-addressed to a minimal-function child. This always */
     /* indicates a cache error, unless the IP destination was an ML16 (RLOC16). */
     if (!thread_addr_is_mesh_local_16(buf->dst_sa.address, cur) ||
-        buf->dst_sa.address[14] != ll_dst->address[2] ||
-        buf->dst_sa.address[15] != ll_dst->address[3]) {
+            buf->dst_sa.address[14] != ll_dst->address[2] ||
+            buf->dst_sa.address[15] != ll_dst->address[3]) {
         goto bounce;
     }
 
@@ -474,7 +475,7 @@ buffer_t *thread_nd_special_forwarding(protocol_interface_info_entry_t *cur, buf
         return buf;
     }
 
-     /* If it was addressed to us as an IP router, it's okay if the packet is for a child */
+    /* If it was addressed to us as an IP router, it's okay if the packet is for a child */
     if (thread_i_am_router(cur)) {
         //Check Registered Addresses
         ns_list_foreach(ipv6_neighbour_t, n, &cur->ipv6_neighbour_cache.list) {
@@ -547,8 +548,7 @@ int thread_nd_address_registration(protocol_interface_info_entry_t *cur, const u
     }
 
     uint8_t *nce_eui64 = ipv6_neighbour_eui64(&cur->ipv6_neighbour_cache, neigh);
-    if (neigh->state != IP_NEIGHBOUR_NEW && memcmp(nce_eui64, mac64, 8) != 0)
-    {
+    if (neigh->type == IP_NEIGHBOUR_REGISTERED && memcmp(nce_eui64, mac64, 8) != 0) {
         return -2;
     }
 
@@ -577,11 +577,23 @@ void thread_nd_address_remove(protocol_interface_info_entry_t *cur_interface, ad
     }
 }
 
+bool thread_pbbr_aloc_map(protocol_interface_info_entry_t *cur, uint16_t *addr16)
+{
+    if (*addr16 == 0xfc38) {
+        uint8_t addr[16];
+        if (0 == thread_common_primary_bbr_get(cur, addr, NULL, NULL, NULL)) {
+            *addr16 = common_read_16_bit(addr + 14);
+            return true;
+        }
+    }
+    return false;
+}
+
 int thread_nd_map_anycast_address(protocol_interface_info_entry_t *cur, uint16_t *addr16)
 {
     // Nothing implemented for now
     uint16_t anycastAddress = *addr16;
-    if(anycastAddress == 0xfc00) {
+    if (anycastAddress == 0xfc00) {
         // this is leader anycast address
         *addr16 = thread_router_addr_from_id(cur->thread_info->thread_leader_data->leaderRouterId);
         return 0;
@@ -607,13 +619,13 @@ int thread_nd_map_anycast_address(protocol_interface_info_entry_t *cur, uint16_t
         if (!cur->thread_info->registered_commissioner.commissioner_valid) {
             return -1;
         }
-        if ( (anycastAddress & 0x0007) != cur->thread_info->registered_commissioner.session_id % 8 ) {
+        if ((anycastAddress & 0x0007) != cur->thread_info->registered_commissioner.session_id % 8) {
             return -1;
         }
         *addr16 = common_read_16_bit(cur->thread_info->registered_commissioner.border_router_address + 14);
         return 0;
     }
-    if (thread_extension_aloc_map(cur,addr16)) {
+    if (thread_pbbr_aloc_map(cur, addr16)) {
         return 0;
     }
 

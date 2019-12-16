@@ -94,7 +94,9 @@ void test_fwrite_fread()
     TestFile<FS>::resetFunctionCallHistory();
     write_ret = std::fwrite(str2, 1, str2_size, file);
     TEST_ASSERT_TRUE(TestFile<FS>::functionCalled(TestFile<FS>::fnWrite));
+#if !defined(__MICROLIB)
     TEST_ASSERT_TRUE(std::ferror(file) != 0);
+#endif
     std::clearerr(file);
 
     // ARMCC/IAR returns 0 here instead of number of elements successfully written !!!
@@ -104,7 +106,9 @@ void test_fwrite_fread()
     TestFile<FS>::resetFunctionCallHistory();
     write_ret = std::fwrite(str1, 1, str1_size, file);
     TEST_ASSERT_TRUE(TestFile<FS>::functionCalled(TestFile<FS>::fnWrite));
+#if !defined(__MICROLIB)
     TEST_ASSERT_TRUE(std::ferror(file) != 0);
+#endif
     TEST_ASSERT_EQUAL_INT(0, write_ret);
 
     std::rewind(file);
@@ -120,7 +124,9 @@ void test_fwrite_fread()
     TestFile<FS>::resetFunctionCallHistory();
     read_ret = std::fread(read_buf, 1, str2_size, file);
     TEST_ASSERT_TRUE(TestFile<FS>::functionCalled(TestFile<FS>::fnRead));
+#if !defined(__MICROLIB)
     TEST_ASSERT_TRUE(std::feof(file) != 0);
+#endif
     std::clearerr(file);
     TEST_ASSERT_EQUAL_INT(str2_size - 1, read_ret);
     TEST_ASSERT_EQUAL_INT(0, strncmp(str2, read_buf, str2_size - 1));
@@ -129,7 +135,9 @@ void test_fwrite_fread()
     TestFile<FS>::resetFunctionCallHistory();
     read_ret = std::fread(read_buf, 1, str2_size, file);
     TEST_ASSERT_TRUE(TestFile<FS>::functionCalled(TestFile<FS>::fnRead));
+#if !defined(__MICROLIB)
     TEST_ASSERT_TRUE(std::feof(file) != 0);
+#endif
     TEST_ASSERT_EQUAL_INT(0, read_ret);
 
     std::fclose(file);
@@ -187,7 +195,9 @@ void test_fputc_fgetc()
     TestFile<FS>::resetFunctionCallHistory();
     ret = std::fputc(char_buf[0], file);
     TEST_ASSERT_TRUE(TestFile<FS>::functionCalled(TestFile<FS>::fnWrite));
+#if !defined(__MICROLIB)
     TEST_ASSERT_TRUE(std::ferror(file) != 0);
+#endif
     TEST_ASSERT_EQUAL_INT(EOF, ret);
 
     std::rewind(file);
@@ -212,7 +222,9 @@ void test_fputc_fgetc()
     TestFile<FS>::resetFunctionCallHistory();
     ret = std::fgetc(file);
     TEST_ASSERT_TRUE(TestFile<FS>::functionCalled(TestFile<FS>::fnRead));
+#if !defined(__MICROLIB)
     TEST_ASSERT_TRUE(std::feof(file) != 0);
+#endif
     TEST_ASSERT_EQUAL_INT(EOF, ret);
 
     std::fclose(file);
@@ -261,7 +273,9 @@ void test_fputs_fgets()
     TestFile<FS>::resetFunctionCallHistory();
     fputs_ret = std::fputs(str2, file);
     TEST_ASSERT_TRUE(TestFile<FS>::functionCalled(TestFile<FS>::fnWrite));
+#if !defined(__MICROLIB)
     TEST_ASSERT_TRUE(std::ferror(file) != 0);
+#endif
     std::clearerr(file);
     TEST_ASSERT_EQUAL_INT(EOF, fputs_ret);
 
@@ -269,7 +283,9 @@ void test_fputs_fgets()
     TestFile<FS>::resetFunctionCallHistory();
     fputs_ret = std::fputs(str1, file);
     TEST_ASSERT_TRUE(TestFile<FS>::functionCalled(TestFile<FS>::fnWrite));
+#if !defined(__MICROLIB)
     TEST_ASSERT_TRUE(std::ferror(file) != 0);
+#endif
     TEST_ASSERT_EQUAL_INT(EOF, fputs_ret);
 
     std::rewind(file);
@@ -285,7 +301,9 @@ void test_fputs_fgets()
     TestFile<FS>::resetFunctionCallHistory();
     fgets_ret = std::fgets(read_buf, str2_size + 1, file);
     TEST_ASSERT_TRUE(TestFile<FS>::functionCalled(TestFile<FS>::fnRead));
+#if !defined(__MICROLIB)
     TEST_ASSERT_TRUE(std::feof(file) != 0);
+#endif
     std::clearerr(file);
     TEST_ASSERT_EQUAL_INT(read_buf, fgets_ret);
     TEST_ASSERT_EQUAL_INT(0, strncmp(read_buf, str2, str2_size - 2));
@@ -294,7 +312,9 @@ void test_fputs_fgets()
     TestFile<FS>::resetFunctionCallHistory();
     fgets_ret = std::fgets(read_buf, str2_size + 1, file);
     TEST_ASSERT_TRUE(TestFile<FS>::functionCalled(TestFile<FS>::fnRead));
+#if !defined(__MICROLIB)
     TEST_ASSERT_TRUE(std::feof(file) != 0);
+#endif
     TEST_ASSERT_EQUAL_INT(NULL, fgets_ret);
 
     std::fclose(file);
@@ -339,6 +359,8 @@ void test_fprintf_fscanf()
     TEST_ASSERT_TRUE(TestFile<FS>::functionCalled(TestFile<FS>::fnWrite));
     TEST_ASSERT_EQUAL_INT(str1_size, fprintf_ret);
 
+#if !defined(__MICROLIB)
+    // feof() and ferror() functions are not supported in Microlib.
     // write 3; expected written 2
     TestFile<FS>::resetFunctionCallHistory();
     fprintf_ret = fprintf(file, "%s", str2);
@@ -353,7 +375,17 @@ void test_fprintf_fscanf()
     TEST_ASSERT_TRUE(TestFile<FS>::functionCalled(TestFile<FS>::fnWrite));
     TEST_ASSERT_TRUE(std::ferror(file) != 0);
     TEST_ASSERT_TRUE(fprintf_ret < 0);
-
+#else
+    // Writing remaining available file space of 2 characters
+    // to make further fscanf() test to pass.
+    // write 2; expected written 2
+    TestFile<FS>::resetFunctionCallHistory();
+    fprintf_ret = 0;
+    fprintf_ret += fprintf(file, "%c", str2[0]);
+    fprintf_ret += fprintf(file, "%c", str2[1]);
+    TEST_ASSERT_TRUE(TestFile<FS>::functionCalled(TestFile<FS>::fnWrite));
+    TEST_ASSERT_EQUAL_INT(2, fprintf_ret);
+#endif
     std::rewind(file);
 
     // read 3; expected read 3
@@ -367,8 +399,10 @@ void test_fprintf_fscanf()
     TestFile<FS>::resetFunctionCallHistory();
     fscanf_ret = fscanf(file, "%3s", read_buf);
     TEST_ASSERT_TRUE(TestFile<FS>::functionCalled(TestFile<FS>::fnRead));
+#if !defined(__MICROLIB)
     TEST_ASSERT_TRUE(std::feof(file) != 0);
     std::clearerr(file);
+#endif
     TEST_ASSERT_EQUAL_INT(1, fscanf_ret);
     TEST_ASSERT_EQUAL_INT(0, strncmp(read_buf, str2, str2_size - 1));
 
@@ -376,7 +410,9 @@ void test_fprintf_fscanf()
     TestFile<FS>::resetFunctionCallHistory();
     fscanf_ret = fscanf(file, "%3s", read_buf);
     TEST_ASSERT_TRUE(TestFile<FS>::functionCalled(TestFile<FS>::fnRead));
+#if !defined(__MICROLIB)
     TEST_ASSERT_TRUE(std::feof(file) != 0);
+#endif
     TEST_ASSERT_EQUAL_INT(EOF, fscanf_ret);
 
     std::fclose(file);
@@ -384,17 +420,15 @@ void test_fprintf_fscanf()
 
 /** Test fseek and ftell
  *
- *  Given already opened file is empty
- *
- *  When set the file position indicator via fseek
- *  Then underneath retargeting layer seek function is called
- *       fseek return with succeed and ftell return already set position
+ *  ARM library is quite good at optimising out unnecessary calls to underlying
+ *  seek, so only test real non empty files.
  *
  *  Given already opened file is not empty
  *
  *  When set the file position indicator via fseek
  *  Then underneath retargeting layer seek function is called
  *       fseek return with succeed and ftell return already set position
+ *  Check actual character read or written.
  *
  */
 void test_fseek_ftell()
@@ -413,19 +447,6 @@ void test_fseek_ftell()
     ftell_ret = std::ftell(file);
     TEST_ASSERT_EQUAL(0, ftell_ret);
 
-    TestFile<FS>::resetFunctionCallHistory();
-    fssek_ret = std::fseek(file, 0, SEEK_CUR);
-    TEST_ASSERT_EQUAL(0, fssek_ret);
-
-    TestFile<FS>::resetFunctionCallHistory();
-    fssek_ret = std::fseek(file, 0, SEEK_SET);
-    TEST_ASSERT_EQUAL(0, fssek_ret);
-
-    TestFile<FS>::resetFunctionCallHistory();
-    fssek_ret = std::fseek(file, 0, SEEK_END);
-    TEST_ASSERT_TRUE(TestFile<FS>::functionCalled(TestFile<FS>::fnSeek));
-    TEST_ASSERT_EQUAL(0, fssek_ret);
-
     const char *str = "Hello world";
     const std::size_t size = std::strlen(str);
 
@@ -440,21 +461,92 @@ void test_fseek_ftell()
     TEST_ASSERT_EQUAL(0, fssek_ret);
     ftell_ret = std::ftell(file);
     TEST_ASSERT_EQUAL(5, ftell_ret);
+    int c = std::fgetc(file);
+    TEST_ASSERT_TRUE(TestFile<FS>::functionCalled(TestFile<FS>::fnRead));
+    TEST_ASSERT_EQUAL(c, str[5]);
 
     TestFile<FS>::resetFunctionCallHistory();
-    fssek_ret = std::fseek(file, -5, SEEK_CUR);
+    fssek_ret = std::fseek(file, -6, SEEK_CUR);
     TEST_ASSERT_EQUAL(0, fssek_ret);
     ftell_ret = std::ftell(file);
     TEST_ASSERT_EQUAL(0, ftell_ret);
+    c = std::fgetc(file);
+    TEST_ASSERT_TRUE(TestFile<FS>::functionCalled(TestFile<FS>::fnRead));
+    TEST_ASSERT_EQUAL(c, str[0]);
 
     TestFile<FS>::resetFunctionCallHistory();
     fssek_ret = std::fseek(file, 0, SEEK_END);
-    TEST_ASSERT_TRUE(TestFile<FS>::functionCalled(TestFile<FS>::fnSeek));
     TEST_ASSERT_EQUAL(0, fssek_ret);
     ftell_ret = std::ftell(file);
     TEST_ASSERT_EQUAL(size, ftell_ret);
+    c = std::fputc('!', file);
+    TEST_ASSERT_TRUE(TestFile<FS>::functionCalled(TestFile<FS>::fnWrite));
+    TEST_ASSERT_EQUAL(c, '!');
+    TEST_ASSERT_EQUAL(fh.size(), size + 1);
 
     std::fclose(file);
+}
+
+/** Test ftruncate and fstat (st_size)
+ *
+ *  Check we get EBADF for illegal handles
+ *
+ *  Given already opened file is empty
+ *
+ *  Check initial size is returned as 0
+ *  Call ftruncate with negative value - check our EINVAL is passed back
+ *  Call ftruncate with positive value to increase size - check no error return
+ *  Check fstat st_size now reads back as the value we set.
+ *  Call ftruncate with smaller positive value to decrease size - check no error return
+ *  Check fstat st_size now reads back as the value we set.
+ */
+void test_ftruncate_fstat()
+{
+    int fildes;
+    int ret;
+    struct stat st;
+    const uint32_t FS = 128;
+    TestFile<FS> fh;
+
+    ret = ftruncate(12345678, 24);
+    TEST_ASSERT_EQUAL(-1, ret);
+    TEST_ASSERT_EQUAL(EBADF, errno);
+
+    ret = fstat(12345678, &st);
+    TEST_ASSERT_EQUAL(-1, ret);
+    TEST_ASSERT_EQUAL(EBADF, errno);
+
+    fildes = bind_to_fd(&fh);
+    TEST_ASSERT_TRUE(fildes >= 0);
+
+    ret = fstat(fildes, &st);
+    TEST_ASSERT_EQUAL(0, ret);
+    TEST_ASSERT_EQUAL(0, st.st_size);
+
+    TestFile<FS>::resetFunctionCallHistory();
+    ret = ftruncate(fildes, -3);
+    TEST_ASSERT_TRUE(TestFile<FS>::functionCalled(TestFile<FS>::fnTruncate));
+    TEST_ASSERT_EQUAL(-1, ret);
+    TEST_ASSERT_EQUAL(EINVAL, errno);
+
+    TestFile<FS>::resetFunctionCallHistory();
+    ret = ftruncate(fildes, 24);
+    TEST_ASSERT_TRUE(TestFile<FS>::functionCalled(TestFile<FS>::fnTruncate));
+    TEST_ASSERT_EQUAL(0, ret);
+
+    ret = fstat(fildes, &st);
+    TEST_ASSERT_EQUAL(0, ret);
+    TEST_ASSERT_EQUAL(24, st.st_size);
+
+    ret = ftruncate(fildes, 12);
+    TEST_ASSERT_TRUE(TestFile<FS>::functionCalled(TestFile<FS>::fnTruncate));
+    TEST_ASSERT_EQUAL(0, ret);
+
+    ret = fstat(fildes, &st);
+    TEST_ASSERT_EQUAL(0, ret);
+    TEST_ASSERT_EQUAL(12, st.st_size);
+
+    close(fildes);
 }
 
 utest::v1::status_t test_setup(const size_t number_of_cases)
@@ -469,7 +561,8 @@ Case cases[] = {
     Case("Test fputc/fgetc", test_fputc_fgetc),
     Case("Test fputs/fgets", test_fputs_fgets),
     Case("Test fprintf/fscanf", test_fprintf_fscanf),
-    Case("Test fseek/ftell", test_fseek_ftell)
+    Case("Test fseek/ftell", test_fseek_ftell),
+    Case("Test ftruncate/fstat", test_ftruncate_fstat)
 };
 
 utest::v1::Specification specification(test_setup, cases);

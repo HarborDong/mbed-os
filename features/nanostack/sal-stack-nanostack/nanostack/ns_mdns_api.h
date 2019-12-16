@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, Arm Limited and affiliates.
+ * Copyright (c) 2017-2018, Arm Limited and affiliates.
  * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -39,8 +39,7 @@ typedef struct ns_mdns_service *ns_mdns_service_t;  /**< Service instance */
  * \struct ns_mdns_service_param_t
  * \brief Structure for mDNS service parameters
  */
-typedef struct ns_mdns_service_param
-{
+typedef struct ns_mdns_service_param {
     const char *service_type;                   /**< Null-terminated string owned by the caller */
     uint16_t    service_port;                   /**< Service Port number */
     const uint8_t *(*service_get_txt)(void);    /**< Call-back function, which returns a pointer to the service TXT record (null-terminated).

@@ -27,8 +27,7 @@
 namespace mbed {
 namespace nfc {
 
-/**
- * @addtogroup nfc
+/** @addtogroup nfc
  * @{
  */
 
@@ -126,8 +125,8 @@ private:
         nfc_eeprom_idle,
 
         nfc_eeprom_write_start_session,
-        nfc_eeprom_write_write_bytes,
         nfc_eeprom_write_write_size,
+        nfc_eeprom_write_write_bytes,
         nfc_eeprom_write_end_session,
 
         nfc_eeprom_read_start_session,
@@ -144,6 +143,7 @@ private:
 
     Delegate *_delegate;
     NFCEEPROMDriver *_driver;
+    events::EventQueue *_event_queue;
     bool _initialized;
 
     nfc_eeprom_operation_t _current_op;
@@ -152,12 +152,7 @@ private:
     uint32_t _eeprom_address;
     nfc_err_t _operation_result;
 };
-
-/**
- * @}
- */
-
-
+/** @}*/
 } // namespace nfc
 } // namespace mbed
 

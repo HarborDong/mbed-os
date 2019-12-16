@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2017, Arm Limited and affiliates.
+ * Copyright (c) 2014-2018, Arm Limited and affiliates.
  * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -198,7 +198,7 @@ bool mle_tlv_read_tlv(mle_tlv_type_t reqType, uint8_t *ptr, uint16_t data_len, m
             return true;
         } else if (reqType == MLE_TYPE_LINK_METRICS_REPORT) {
             return true;
-        }else if (reqType == MLE_TYPE_TLV_REQUEST || reqType ==  MLE_TYPE_NETWORK_DATA ||
+        } else if (reqType == MLE_TYPE_TLV_REQUEST || reqType ==  MLE_TYPE_NETWORK_DATA ||
                    reqType ==  MLE_TYPE_PENDING_OPERATIONAL_DATASET || reqType ==  MLE_TYPE_OPERATIONAL_DATASET) {
             return true;
         }
@@ -348,7 +348,7 @@ uint16_t mle_tlv_validate_response(uint8_t *ptr, uint16_t data_len)
 
 bool mle_tlv_requested(uint8_t *tlv_ptr, uint16_t tlv_len, uint8_t tlv_type)
 {
-    for (uint16_t i=0; i < tlv_len; i++) {
+    for (uint16_t i = 0; i < tlv_len; i++) {
         if (tlv_ptr[i] == tlv_type) {
             return true;
         }
@@ -358,7 +358,7 @@ bool mle_tlv_requested(uint8_t *tlv_ptr, uint16_t tlv_len, uint8_t tlv_type)
 
 void mle_tlv_ignore(uint8_t *tlv_ptr, uint16_t tlv_len, uint8_t tlv_type)
 {
-    for (uint16_t i=0; i < tlv_len; i++) {
+    for (uint16_t i = 0; i < tlv_len; i++) {
         if (tlv_ptr[i] == tlv_type) {
             tlv_ptr[i] = MLE_TYPE_UNASSIGNED;
         }

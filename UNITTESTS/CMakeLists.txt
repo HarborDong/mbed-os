@@ -9,10 +9,10 @@ project(${PROJECT_NAME})
 macro(use_cxx14)
     if (CMAKE_VERSION VERSION_LESS 3.1)
         if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=gnu++98")
+            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=gnu++14")
         endif()
     else()
-        set(CMAKE_CXX_STANDARD 98)
+        set(CMAKE_CXX_STANDARD 14)
         set(CMAKE_CXX_STANDARD_REQUIRED ON)
     endif()
 endmacro()
@@ -52,14 +52,14 @@ add_subdirectory(${CMAKE_BINARY_DIR}/googletest-src
 # dependencies automatically when using CMake 2.8.11 or
 # later.
 target_include_directories(gmock_main SYSTEM BEFORE INTERFACE
-  "${gtest_SOURCE_DIR}/include"
-  "${gmock_SOURCE_DIR}/include")
+  "$<BUILD_INTERFACE:${gtest_SOURCE_DIR}/include>"
+  "$<BUILD_INTERFACE:${gmock_SOURCE_DIR}/include>")
 
 ####################
 # TESTING
 ####################
 
-enable_testing()
+include(CTest)
 
 set_property(DIRECTORY APPEND PROPERTY ADDITIONAL_MAKE_CLEAN_FILES
   "${CMAKE_BINARY_DIR}/Testing"
@@ -76,7 +76,7 @@ if (COVERAGE)
   endif()
 
   # Append coverage compiler flags
-  set(COVERAGE_COMPILER_FLAGS "-g -O0 --coverage -fprofile-arcs -ftest-coverage")
+  set(COVERAGE_COMPILER_FLAGS "-g -O0 --coverage")
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${COVERAGE_COMPILER_FLAGS}")
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${COVERAGE_COMPILER_FLAGS}")
 
@@ -86,20 +86,54 @@ endif(COVERAGE)
 # UNIT TESTS
 ####################
 
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DUNITTEST")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DUNITTEST")
+
 # Set include dirs.
 set(unittest-includes-base
   "${PROJECT_SOURCE_DIR}/target_h"
   "${PROJECT_SOURCE_DIR}/target_h/events"
+  "${PROJECT_SOURCE_DIR}/target_h/events/equeue"
+  "${PROJECT_SOURCE_DIR}/target_h/platform"
+  "${PROJECT_SOURCE_DIR}/target_h/platform/cxxsupport"
+  "${PROJECT_SOURCE_DIR}/target_h/drivers"
   "${PROJECT_SOURCE_DIR}/stubs"
   "${PROJECT_SOURCE_DIR}/.."
   "${PROJECT_SOURCE_DIR}/../features"
+  "${PROJECT_SOURCE_DIR}/../features/netsocket"
   "${PROJECT_SOURCE_DIR}/../platform"
   "${PROJECT_SOURCE_DIR}/../drivers"
   "${PROJECT_SOURCE_DIR}/../hal"
   "${PROJECT_SOURCE_DIR}/../events"
+  "${PROJECT_SOURCE_DIR}/../events/source"
+  "${PROJECT_SOURCE_DIR}/../events/internal"
+  "${PROJECT_SOURCE_DIR}/../rtos"
   "${PROJECT_SOURCE_DIR}/../rtos/TARGET_CORTEX"
   "${PROJECT_SOURCE_DIR}/../rtos/TARGET_CORTEX/rtx5/Include"
   "${PROJECT_SOURCE_DIR}/../cmsis"
+  "${PROJECT_SOURCE_DIR}/../features/frameworks"
+  "${PROJECT_SOURCE_DIR}/../features/frameworks/mbed-trace"
+  "${PROJECT_SOURCE_DIR}/../features/frameworks/nanostack-libservice"
+  "${PROJECT_SOURCE_DIR}/../features/frameworks/nanostack-libservice/mbed-client-libservice"
+  "${PROJECT_SOURCE_DIR}/../features/filesystem/fat"
+  "${PROJECT_SOURCE_DIR}/../features/filesystem/fat/ChaN"
+  "${PROJECT_SOURCE_DIR}/../features/filesystem/bd"
+  "${PROJECT_SOURCE_DIR}/../features/filesystem/"
+  "${PROJECT_SOURCE_DIR}/../features/filesystem/littlefs"
+  "${PROJECT_SOURCE_DIR}/../features/filesystem/littlefs/littlefs"
+  "${PROJECT_SOURCE_DIR}/../features/cellular/framework/API"
+  "${PROJECT_SOURCE_DIR}/../features/cellular/framework/AT"
+  "${PROJECT_SOURCE_DIR}/../features/cellular/framework/device"
+  "${PROJECT_SOURCE_DIR}/../features/cellular/framework"
+  "${PROJECT_SOURCE_DIR}/../features/cellular/framework/common"
+  "${PROJECT_SOURCE_DIR}/../features/lorawan"
+  "${PROJECT_SOURCE_DIR}/../features/lorawan/lorastack"
+  "${PROJECT_SOURCE_DIR}/../features/lorawan/lorastack/mac"
+  "${PROJECT_SOURCE_DIR}/../features/lorawan/lorastack/phy"
+  "${PROJECT_SOURCE_DIR}/../features/lorawan/system"
+  "${PROJECT_SOURCE_DIR}/../features/mbedtls"
+  "${PROJECT_SOURCE_DIR}/../features/mbedtls/inc"
+  "${PROJECT_SOURCE_DIR}/../features/mbedtls/mbed-crypto/inc"
 )
 
 # Create a list for test suites.
@@ -124,15 +158,22 @@ foreach(testfile ${unittest-file-list})
   set(unittest-includes ${unittest-includes-base})
   set(unittest-sources)
   set(unittest-test-sources)
+  set(unittest-test-flags)
 
   # Get source files
   include("${testfile}")
 
-  if(TEST_SUITE_NAME)
-    set(TEST_SUITES ${TEST_SUITES} ${TEST_SUITE_NAME})
-  else()
-    message(FATAL_ERROR "No TEST_SUITE_NAME found in test file. Add it to ${testfile}.")
-  endif()
+  get_filename_component(TEST_SUITE_DIR ${testfile} DIRECTORY)
+
+  file(RELATIVE_PATH
+       TEST_SUITE_NAME # output
+       ${PROJECT_SOURCE_DIR} # root
+       ${TEST_SUITE_DIR} #abs dirpath
+  )
+
+  string(REGEX REPLACE "/|\\\\" "-" TEST_SUITE_NAME ${TEST_SUITE_NAME})
+
+  set(TEST_SUITES ${TEST_SUITES} ${TEST_SUITE_NAME})
 
   set(LIBS_TO_BE_LINKED gmock_main)
 
@@ -144,6 +185,8 @@ foreach(testfile ${unittest-file-list})
     add_library("${TEST_SUITE_NAME}.${LIB_NAME}" STATIC ${unittest-sources})
     target_include_directories("${TEST_SUITE_NAME}.${LIB_NAME}" PRIVATE
       ${unittest-includes})
+    target_compile_options("${TEST_SUITE_NAME}.${LIB_NAME}" PRIVATE
+      ${unittest-test-flags})
     set(LIBS_TO_BE_LINKED ${LIBS_TO_BE_LINKED} "${TEST_SUITE_NAME}.${LIB_NAME}")
 
     # Append lib build directory to list
@@ -155,11 +198,13 @@ foreach(testfile ${unittest-file-list})
     add_executable(${TEST_SUITE_NAME} ${unittest-test-sources})
     target_include_directories(${TEST_SUITE_NAME} PRIVATE
       ${unittest-includes})
+    target_compile_options(${TEST_SUITE_NAME} PRIVATE
+      ${unittest-test-flags})
 
     # Link the executable with the libraries.
     target_link_libraries(${TEST_SUITE_NAME} ${LIBS_TO_BE_LINKED})
 
-    add_test(NAME "${TEST_SUITE_NAME}UnitTests" COMMAND ${TEST_SUITE_NAME})
+    add_test(NAME "${TEST_SUITE_NAME}" COMMAND ${TEST_SUITE_NAME})
 
     # Append test build directory to list
     list(APPEND BUILD_DIRECTORIES "./CMakeFiles/${TEST_SUITE_NAME}.dir")
@@ -167,3 +212,4 @@ foreach(testfile ${unittest-file-list})
     message(WARNING "No test source files found for ${TEST_SUITE_NAME}.\n")
   endif(unittest-test-sources)
 endforeach(testfile)
+

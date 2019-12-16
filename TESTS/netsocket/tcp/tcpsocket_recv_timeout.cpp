@@ -15,6 +15,7 @@
  * limitations under the License.
  */
 
+#if defined(MBED_CONF_RTOS_PRESENT)
 #include "mbed.h"
 #include "TCPSocket.h"
 #include "greentea-client/test_env.h"
@@ -26,7 +27,7 @@ using namespace utest::v1;
 
 namespace {
 static const int SIGNAL_SIGIO = 0x1;
-static const int SIGIO_TIMEOUT = 5000; //[ms]
+static const int SIGIO_TIMEOUT = 20000; //[ms]
 }
 
 static void _sigio_handler(osThreadId id)
@@ -36,6 +37,7 @@ static void _sigio_handler(osThreadId id)
 
 void TCPSOCKET_RECV_TIMEOUT()
 {
+    SKIP_IF_TCP_UNSUPPORTED();
     static const int DATA_LEN = 100;
     char buff[DATA_LEN] = {0};
     int time_allotted = split2half_rmng_tcp_test_time(); // [s]
@@ -45,7 +47,7 @@ void TCPSOCKET_RECV_TIMEOUT()
     TCPSocket sock;
     tcpsocket_connect_to_echo_srv(sock);
     sock.set_timeout(100);
-    sock.sigio(callback(_sigio_handler, Thread::gettid()));
+    sock.sigio(callback(_sigio_handler, ThisThread::get_id()));
 
     int recvd = 0;
     int pkt_unrecvd;
@@ -66,11 +68,16 @@ void TCPSOCKET_RECV_TIMEOUT()
                     TEST_FAIL();
                     goto CLEANUP;
                 }
-                printf("MBED: recv() took: %dms\n", timer.read_ms());
-                TEST_ASSERT_INT_WITHIN(50, 150, timer.read_ms());
+                int recv_time_ms = (timer.read_us() + 500) / 1000;
+                tr_info("MBED: recv() took: %dus", recv_time_ms);
+                if (recv_time_ms > 150) {
+                    TEST_ASSERT(150 - recv_time_ms < 51);
+                } else {
+                    TEST_ASSERT(recv_time_ms - 150 < 51);
+                }
                 continue;
             } else if (recvd < 0) {
-                printf("[pkt#%02d] network error %d\n", i, recvd);
+                tr_error("[pkt#%02d] network error %d", i, recvd);
                 TEST_FAIL();
                 goto CLEANUP;
             }
@@ -82,3 +89,4 @@ CLEANUP:
     tc_exec_time.stop();
     TEST_ASSERT_EQUAL(NSAPI_ERROR_OK, sock.close());
 }
+#endif // defined(MBED_CONF_RTOS_PRESENT)

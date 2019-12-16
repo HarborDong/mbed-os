@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2017, Arm Limited and affiliates.
+ * Copyright (c) 2013-2019, Arm Limited and affiliates.
  * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,7 +18,7 @@
 #include "nsconfig.h"
 #include "ns_types.h"
 #include <string.h>
-#include "Core/include/socket.h"
+#include "Core/include/ns_socket.h"
 #include "nsdynmemLIB.h"
 #include "ns_trace.h"
 #include "NWK_INTERFACE/Include/protocol.h"
@@ -131,8 +131,7 @@ buffer_t *nwk_udp_rx_security_check(buffer_t *buf)
             }
             if (buf->socket && buf->socket->inet_pcb->link_layer_security == 0) {
                 // non-secure okay if it's for a socket whose security flag is clear.
-            }
-            else {
+            } else {
                 drop_unsecured = 1;
             }
         }

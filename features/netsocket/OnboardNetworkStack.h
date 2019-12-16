@@ -21,6 +21,8 @@
 
 #include "NetworkStack.h"
 #include "EMAC.h"
+#include "L3IP.h"
+#include "PPP.h"
 
 /**
  * mbed OS API for onboard IP stack abstraction
@@ -88,36 +90,59 @@ public:
          *
          *  @return         The connection status according to ConnectionStatusType
          */
+
         virtual nsapi_connection_status_t get_connection_status() const = 0;
 
+        /** Returns interface name
+        *
+        * @return  string containing name of network interface for example "en0"
+        */
+
+        virtual char *get_interface_name(char *buf)
+        {
+            return NULL;
+        };
         /** Return MAC address of the network interface
          *
          * @return              MAC address as "V:W:X:Y:Z"
          */
+
         virtual char *get_mac_address(char *buf, nsapi_size_t buflen) = 0;
 
-        /** Copies IP address of the network interface to user supplied buffer
-         *
-         * @param    buf        buffer to which IP address will be copied as "W:X:Y:Z"
-         * @param    buflen     size of supplied buffer
-         * @return              Pointer to a buffer, or NULL if the buffer is too small
-         */
+        /** @copydoc NetworkStack::get_ip_address */
+        virtual nsapi_error_t get_ip_address(SocketAddress *address) = 0;
+
+        MBED_DEPRECATED_SINCE("mbed-os-5.15", "String-based APIs are deprecated")
         virtual char *get_ip_address(char *buf, nsapi_size_t buflen) = 0;
 
-        /** Copies netmask of the network interface to user supplied buffer
-         *
-         * @param    buf        buffer to which netmask will be copied as "W:X:Y:Z"
-         * @param    buflen     size of supplied buffer
-         * @return              Pointer to a buffer, or NULL if the buffer is too small
-         */
+        /** @copydoc NetworkStack::get_ipv6_link_local_address */
+        virtual nsapi_error_t get_ipv6_link_local_address(SocketAddress *address)
+        {
+            return NSAPI_ERROR_UNSUPPORTED;
+        }
+
+        /** @copydoc NetworkStack::get_ip_address_if */
+        virtual nsapi_error_t get_ip_address_if(SocketAddress *address, const char *interface_name)
+        {
+            return NSAPI_ERROR_UNSUPPORTED;
+        }
+
+        MBED_DEPRECATED_SINCE("mbed-os-5.15", "String-based APIs are deprecated")
+        virtual char *get_ip_address_if(char *buf, nsapi_size_t buflen, const char *interface_name)
+        {
+            return NULL;
+        };
+
+        /** @copydoc NetworkStack::get_netmask */
+        virtual nsapi_error_t get_netmask(SocketAddress *address) = 0;
+
+        MBED_DEPRECATED_SINCE("mbed-os-5.15", "String-based APIs are deprecated")
         virtual char *get_netmask(char *buf, nsapi_size_t buflen) = 0;
 
-        /** Copies gateway address of the network interface to user supplied buffer
-         *
-         * @param    buf        buffer to which gateway address will be copied as "W:X:Y:Z"
-         * @param    buflen     size of supplied buffer
-         * @return              Pointer to a buffer, or NULL if the buffer is too small
-         */
+        /** @copydoc NetworkStack::get_gateway */
+        virtual nsapi_error_t get_gateway(SocketAddress *address) = 0;
+
+        MBED_DEPRECATED_SINCE("mbed-os-5.15", "String-based APIs are deprecated")
         virtual char *get_gateway(char *buf, nsapi_size_t buflen) = 0;
     };
 
@@ -133,6 +158,31 @@ public:
      * @return                      NSAPI_ERROR_OK on success, or error code
      */
     virtual nsapi_error_t add_ethernet_interface(EMAC &emac, bool default_if, Interface **interface_out) = 0;
+
+    virtual nsapi_error_t add_l3ip_interface(L3IP &l3ip, bool default_if, Interface **interface_out)
+    {
+        return NSAPI_ERROR_OK;
+    };
+
+    virtual nsapi_error_t add_ppp_interface(PPP &ppp, bool default_if, Interface **interface_out)
+    {
+        return NSAPI_ERROR_UNSUPPORTED;
+    };
+
+    virtual nsapi_error_t remove_l3ip_interface(Interface **interface_out)
+    {
+        return NSAPI_ERROR_OK;
+    };
+
+    virtual nsapi_error_t remove_ppp_interface(Interface **interface_out)
+    {
+        return NSAPI_ERROR_UNSUPPORTED;
+    };
+
+    virtual void set_default_interface(OnboardNetworkStack::Interface *interface)
+    {
+    }
+
 };
 
 #endif /* MBED_IPSTACK_H */

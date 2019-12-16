@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2018, Arm Limited and affiliates.
+ * Copyright (c) 2015-2019, Arm Limited and affiliates.
  * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -83,6 +83,10 @@ void rpl_instance_dio_trigger(rpl_instance_t *instance, struct protocol_interfac
 void rpl_instance_set_local_repair(rpl_instance_t *instance, bool repair);
 bool rpl_instance_local_repair(const rpl_instance_t *instance);
 uint16_t rpl_instance_current_rank(const rpl_instance_t *instance);
+bool rpl_instance_address_is_parent(rpl_instance_t *instance, const uint8_t *ipv6_addr);
+bool rpl_instance_address_is_candidate(rpl_instance_t *instance, const uint8_t *ipv6_addr, uint16_t candidate_amount);
+uint16_t rpl_instance_address_candidate_count(rpl_instance_t *instance, bool selected_parents);
+void rpl_instance_neighbor_delete(rpl_instance_t *instance, const uint8_t *ipv6_addr);
 void rpl_instance_slow_timer(rpl_instance_t *instance, uint16_t seconds);
 
 rpl_dodag_t *rpl_lookup_dodag(const rpl_instance_t *instance, const uint8_t *dodagid);
@@ -110,6 +114,8 @@ rpl_dio_route_t *rpl_dodag_update_dio_route(rpl_dodag_t *dodag, const uint8_t *p
 void rpl_dodag_delete_dio_route(rpl_dodag_t *dodag, rpl_dio_route_t *route);
 const rpl_dio_route_list_t *rpl_dodag_get_route_list(const rpl_dodag_t *dodag);
 
+void rpl_dodag_update_unpublished_dio_prefix_start(rpl_dodag_t *dodag);
+void rpl_dodag_update_unpublished_dio_prefix_finish(rpl_dodag_t *dodag);
 prefix_entry_t *rpl_dodag_update_dio_prefix(rpl_dodag_t *dodag, const uint8_t *prefix, uint8_t prefix_len, uint8_t flags, uint32_t lifetime, uint32_t preftime, bool publish, bool age);
 void rpl_dodag_delete_dio_prefix(rpl_dodag_t *dodag, prefix_entry_t *prefix);
 const prefix_list_t *rpl_dodag_get_prefix_list(const rpl_dodag_t *dodag);
@@ -135,11 +141,14 @@ void rpl_neighbour_update_dodag_version(rpl_neighbour_t *neighbour, rpl_dodag_ve
 bool rpl_neighbour_update_dtsn(rpl_neighbour_t *neighbour, uint8_t dtsn);
 rpl_instance_t *rpl_neighbour_instance(const rpl_neighbour_t *neighbour);
 
-void rpl_instance_neighbours_changed(rpl_instance_t *instance);
+
+void rpl_instance_neighbours_changed(rpl_instance_t *instance, const rpl_dodag_t *dodag);
 void rpl_instance_run_parent_selection(rpl_instance_t *instance);
 
 void rpl_upward_print_instance(rpl_instance_t *instance, route_print_fn_t *print_fn);
 
 bool rpl_upward_read_dodag_info(const rpl_instance_t *instance, struct rpl_dodag_info_t *dodag_info);
-uint16_t rpl_upward_read_dao_target_list_size(const rpl_instance_t *instance);
+bool rpl_upward_accept_prefix_update(const rpl_dodag_t *dodag_info, const rpl_neighbour_t *neighbour, const rpl_neighbour_t *pref_parent);
+uint16_t rpl_upward_read_dao_target_list_size(const rpl_instance_t *instance, const uint8_t *target_prefix);
+
 #endif /* RPL_UPWARD_H_ */

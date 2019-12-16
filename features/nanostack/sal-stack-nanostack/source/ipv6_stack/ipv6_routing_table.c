@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2018, Arm Limited and affiliates.
+ * Copyright (c) 2012-2019, Arm Limited and affiliates.
  * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -37,7 +37,7 @@
 #include "randLIB.h"
 #include "ns_trace.h"
 #include "string.h"
-#include "Core/include/address.h"
+#include "Core/include/ns_address_internal.h"
 #include "ipv6_stack/ipv6_routing_table.h"
 #include "Common_Protocols/ipv6_constants.h"
 #include "Common_Protocols/icmpv6.h"
@@ -52,14 +52,40 @@
 #define NCACHE_GC_PERIOD    20  /* seconds */
 #define DCACHE_GC_PERIOD    20  /* seconds */
 
-static uint16_t current_max_cache = 64;
+/* Neighbour Cache garbage collection parameters (per interface) */
+/* Parameters only for garbage-collectible entries; registered entries counted separately */
+#define NCACHE_MAX_LONG_TERM    8   /* Target for basic GC - expire old entries if more than this */
+#define NCACHE_MAX_SHORT_TERM   32  /* Expire stale entries if more than this */
+#define NCACHE_MAX_ABSOLUTE     64  /* Never have more than this */
+#define NCACHE_GC_AGE           600 /* 10 minutes (1s units - decremented every slow timer call) */
+
+/* Destination Cache garbage collection parameters (system-wide) */
+#define DCACHE_MAX_LONG_TERM    16
+#define DCACHE_MAX_SHORT_TERM   40
+#define DCACHE_MAX_ABSOLUTE     64 /* Never have more than this */
+#define DCACHE_GC_AGE           (30 * DCACHE_GC_PERIOD)    /* 10 minutes */
+
+typedef struct destination_cache_configuration_s {
+    uint16_t max_entries;  // Never have more than this
+    uint16_t short_term_entries; // Expire stale entries if more than this
+    uint16_t long_term_entries; // Target for basic GC - expire old entries if more than this
+    uint16_t entry_lifetime;  // 20s units - decremented once per periodic GC
+} destination_cache_config_t;
+
+typedef struct neighbour_cache_configuration_s {
+    uint16_t max_entries; // Never have more than this
+    uint16_t short_term_entries; // Expire stale entries if more than this
+    uint16_t long_term_entries; // Target for basic GC - expire old entries if more than this
+    uint16_t entry_lifetime; // 1s units - decremented every slow timer call
+} neighbour_cache_config_t;
+
+static destination_cache_config_t destination_cache_config = {DCACHE_MAX_ABSOLUTE, DCACHE_MAX_SHORT_TERM, DCACHE_MAX_LONG_TERM, DCACHE_GC_AGE};
+static neighbour_cache_config_t neighbour_cache_config = {NCACHE_MAX_ABSOLUTE, NCACHE_MAX_SHORT_TERM, NCACHE_MAX_LONG_TERM, NCACHE_GC_AGE};
 
 /* We track "lifetime" of garbage-collectible entries, resetting
  * when used. Entries with lifetime 0 are favoured
  * for garbage-collection. */
-#define NCACHE_GC_AGE 600   /* 10 minutes (1s units - decremented every slow timer call) */
-#define DCACHE_GC_AGE 30    /* 10 minutes (20s units - decremented once per periodic GC) */
-#define DCACHE_GC_AGE_LL 6  /* 2 minutes for link-local destinations */
+#define DCACHE_GC_AGE_LL (120 / DCACHE_GC_PERIOD)  /* 2 minutes for link-local destinations, in DCACHE_GC_PERIOD intervals */
 
 /* For probable routers, consider them unreachable if ETX is greater than this */
 #define ETX_REACHABILITY_THRESHOLD 0x200    /* 8.8 fixed-point, so 2 */
@@ -78,27 +104,6 @@ static void ipv6_route_table_remove_last_one_from_source(int8_t interface_id, ip
 static uint8_t ipv6_route_table_get_max_entries(int8_t interface_id, ipv6_route_src_t source);
 
 static uint16_t dcache_gc_timer;
-
-static uint16_t cache_long_term(bool is_destination)
-{
-    uint16_t value = current_max_cache/8;
-    if (is_destination) {
-        value*=2;
-    }
-    if (value < 4) {
-        value = 4;
-    }
-    return value;
-}
-
-static uint16_t cache_short_term(bool is_destination)
-{
-    uint16_t value = current_max_cache/2;
-    if (value < cache_long_term(is_destination)) {
-        return cache_long_term(is_destination);
-    }
-    return value;
-}
 
 static uint32_t next_probe_time(ipv6_neighbour_cache_t *cache, uint_fast8_t retrans_num)
 {
@@ -120,7 +125,57 @@ int8_t ipv6_neighbour_set_current_max_cache(uint16_t max_cache)
     if (max_cache < 4) {
         return -1;
     }
-    current_max_cache = max_cache;
+
+    // adjust destination cache
+    destination_cache_config.max_entries = max_cache;
+    destination_cache_config.long_term_entries = max_cache / 4;
+    if (destination_cache_config.long_term_entries < 4) {
+        destination_cache_config.long_term_entries = 4;
+    }
+    destination_cache_config.short_term_entries = max_cache / 2;
+    if (destination_cache_config.short_term_entries < destination_cache_config.long_term_entries) {
+        destination_cache_config.short_term_entries = destination_cache_config.long_term_entries;
+    }
+
+    // adjust neighbour cache
+    neighbour_cache_config.max_entries = max_cache;
+    neighbour_cache_config.long_term_entries = max_cache / 8;
+    if (neighbour_cache_config.long_term_entries < 4) {
+        neighbour_cache_config.long_term_entries = 4;
+    }
+    neighbour_cache_config.short_term_entries = max_cache / 4;
+    if (neighbour_cache_config.short_term_entries < neighbour_cache_config.long_term_entries) {
+        neighbour_cache_config.short_term_entries = neighbour_cache_config.long_term_entries;
+    }
+
+    return 0;
+}
+
+int8_t ipv6_destination_cache_configure(uint16_t max_entries, uint16_t short_term_threshold, uint16_t long_term_threshold, uint16_t lifetime)
+{
+    if ((max_entries < 4) || (short_term_threshold >= max_entries) || (long_term_threshold >= short_term_threshold) || (lifetime < 120)) {
+        return -1;
+    }
+
+    destination_cache_config.max_entries = max_entries;
+    destination_cache_config.short_term_entries = short_term_threshold;
+    destination_cache_config.long_term_entries = long_term_threshold;
+    destination_cache_config.entry_lifetime = lifetime;
+
+    return 0;
+}
+
+int8_t ipv6_neighbour_cache_configure(uint16_t max_entries, uint16_t short_term_threshold, uint16_t long_term_threshold, uint16_t lifetime)
+{
+    if ((max_entries < 4) || (short_term_threshold >= max_entries) || (long_term_threshold >= short_term_threshold) || (lifetime < 120)) {
+        return -1;
+    }
+
+    neighbour_cache_config.max_entries = max_entries;
+    neighbour_cache_config.short_term_entries = short_term_threshold;
+    neighbour_cache_config.long_term_entries = long_term_threshold;
+    neighbour_cache_config.entry_lifetime = lifetime;
+
     return 0;
 }
 
@@ -172,6 +227,7 @@ void ipv6_neighbour_cache_init(ipv6_neighbour_cache_t *cache, int8_t interface_i
     cache->recv_addr_reg = false;
     cache->send_addr_reg = false;
     cache->send_nud_probes = true;
+    cache->probe_avoided_routers = true;
     cache->recv_na_aro = false;
     cache->recv_ns_aro = false;
     cache->route_if_info.metric = 0;
@@ -247,9 +303,15 @@ ipv6_neighbour_t *ipv6_neighbour_lookup_or_create(ipv6_neighbour_cache_t *cache,
 {
     uint_fast16_t count = 0;
     ipv6_neighbour_t *entry = NULL;
+    ipv6_neighbour_t *garbage_possible_entry = NULL;
 
     ns_list_foreach(ipv6_neighbour_t, cur, &cache->list) {
-        count++;
+
+        if (cur->type == IP_NEIGHBOUR_GARBAGE_COLLECTIBLE) {
+            garbage_possible_entry = cur;
+            count++;
+        }
+
         if (addr_ipv6_equal(cur->ip_address, address)) {
             if (cur != ns_list_get_first(&cache->list)) {
                 ns_list_remove(&cache->list, cur);
@@ -259,9 +321,9 @@ ipv6_neighbour_t *ipv6_neighbour_lookup_or_create(ipv6_neighbour_cache_t *cache,
         }
     }
 
-    if (count >= current_max_cache) {
-        entry = ns_list_get_last(&cache->list);
-        ipv6_neighbour_entry_remove(cache, entry);
+    if (count >= neighbour_cache_config.max_entries && garbage_possible_entry) {
+        //Remove Last storaged IP_NEIGHBOUR_GARBAGE_COLLECTIBLE type entry
+        ipv6_neighbour_entry_remove(cache, garbage_possible_entry);
     }
 
     // Allocate new - note we have a basic size, plus enough for the LL address,
@@ -310,7 +372,7 @@ ipv6_neighbour_t *ipv6_neighbour_used(ipv6_neighbour_cache_t *cache, ipv6_neighb
 {
     /* Reset the GC life, if it's a GC entry */
     if (entry->type == IP_NEIGHBOUR_GARBAGE_COLLECTIBLE) {
-        entry->lifetime = NCACHE_GC_AGE;
+        entry->lifetime = neighbour_cache_config.entry_lifetime;
     }
 
     /* Move it to the front of the list */
@@ -407,6 +469,16 @@ void ipv6_neighbour_delete_registered_by_eui64(ipv6_neighbour_cache_t *cache, co
             ipv6_neighbour_entry_remove(cache, cur);
         }
     }
+}
+
+bool ipv6_neighbour_has_registered_by_eui64(ipv6_neighbour_cache_t *cache, const uint8_t *eui64)
+{
+    ns_list_foreach_safe(ipv6_neighbour_t, cur, &cache->list) {
+        if (cur->type != IP_NEIGHBOUR_GARBAGE_COLLECTIBLE && memcmp(ipv6_neighbour_eui64(cache, cur), eui64, 8) == 0) {
+            return true;
+        }
+    }
+    return false;
 }
 
 void ipv6_neighbour_set_state(ipv6_neighbour_cache_t *cache, ipv6_neighbour_t *entry, ip_neighbour_cache_state_t state)
@@ -625,7 +697,7 @@ void ipv6_neighbour_cache_print(const ipv6_neighbour_cache_t *cache, route_print
         sprint_array(addr_str, cur->ll_address, addr_len_from_type(cur->ll_type));
         print_fn("LL Addr: (%s %"PRIu32") %s", state_names[cur->state], cur->timer, addr_str);
         if (cache->recv_addr_reg && memcmp(ipv6_neighbour_eui64(cache, cur), ADDR_EUI64_ZERO, 8)) {
-            sprint_array( addr_str, ipv6_neighbour_eui64(cache, cur), 8);
+            sprint_array(addr_str, ipv6_neighbour_eui64(cache, cur), 8);
             print_fn("EUI-64:  (%s %"PRIu32") %s", type_names[cur->type], cur->lifetime, addr_str);
         } else if (cur->type != IP_NEIGHBOUR_GARBAGE_COLLECTIBLE) {
             print_fn("         (%s %"PRIu32") [no EUI-64]", type_names[cur->type], cur->lifetime);
@@ -642,7 +714,7 @@ static void ipv6_neighbour_cache_gc_periodic(ipv6_neighbour_cache_t *cache)
         }
     }
 
-    if (gc_count <= cache_long_term(false)) {
+    if (gc_count <= neighbour_cache_config.long_term_entries) {
         return;
     }
 
@@ -658,9 +730,9 @@ static void ipv6_neighbour_cache_gc_periodic(ipv6_neighbour_cache_t *cache)
             continue;
         }
 
-        if (entry->lifetime == 0 || gc_count > cache_short_term(false)) {
+        if (entry->lifetime == 0 || gc_count > neighbour_cache_config.short_term_entries) {
             ipv6_neighbour_entry_remove(cache, entry);
-            if (--gc_count <= cache_long_term(false)) {
+            if (--gc_count <= neighbour_cache_config.long_term_entries) {
                 break;
             }
         }
@@ -865,7 +937,7 @@ ipv6_destination_t *ipv6_destination_lookup_or_create(const uint8_t *address, in
 
 
     if (!entry) {
-        if (count > current_max_cache) {
+        if (count > destination_cache_config.max_entries) {
             entry = ns_list_get_last(&ipv6_destination_cache);
             ns_list_remove(&ipv6_destination_cache, entry);
             ipv6_destination_release(entry);
@@ -904,7 +976,7 @@ ipv6_destination_t *ipv6_destination_lookup_or_create(const uint8_t *address, in
     if (addr_ipv6_scope(address, NULL) <= IPV6_SCOPE_LINK_LOCAL) {
         entry->lifetime = DCACHE_GC_AGE_LL;
     } else {
-        entry->lifetime = DCACHE_GC_AGE;
+        entry->lifetime = destination_cache_config.entry_lifetime / DCACHE_GC_PERIOD;
     }
 
     return entry;
@@ -1000,6 +1072,23 @@ void ipv6_destination_redirect(const uint8_t *dest_addr, const uint8_t *sender_a
 }
 #endif
 
+void ipv6_destination_cache_forced_gc(bool full_gc)
+{
+    int gc_count = ns_list_count(&ipv6_destination_cache);
+
+    /* Minimize size of destination cache:
+     * - keep absolutely minimum number of entries if not full gc
+     * - clear all entries in case of full gc
+     **/
+    ns_list_foreach_reverse_safe(ipv6_destination_t, entry, &ipv6_destination_cache) {
+        if (entry->lifetime == 0 || gc_count > destination_cache_config.long_term_entries || full_gc) {
+            ns_list_remove(&ipv6_destination_cache, entry);
+            ipv6_destination_release(entry);
+            gc_count--;
+        }
+    }
+}
+
 static void ipv6_destination_release(ipv6_destination_t *dest)
 {
     if (--dest->refcount == 0) {
@@ -1028,7 +1117,7 @@ static void ipv6_destination_cache_gc_periodic(void)
                     entry->pmtu = 0xffff;
                 }
                 if (entry->pmtu != old_mtu) {
-                //   socket_pmtu_changed(entry->destination, entry->interface_id, old_mtu, entry->pmtu);
+                    //   socket_pmtu_changed(entry->destination, entry->interface_id, old_mtu, entry->pmtu);
                 }
             } else {
                 entry->pmtu_lifetime -= DCACHE_GC_PERIOD;
@@ -1037,7 +1126,7 @@ static void ipv6_destination_cache_gc_periodic(void)
 #endif
     }
 
-    if (gc_count <= cache_long_term(true)) {
+    if (gc_count <= destination_cache_config.long_term_entries) {
         return;
     }
 
@@ -1047,10 +1136,10 @@ static void ipv6_destination_cache_gc_periodic(void)
      * MAX_LONG_TERM.
      */
     ns_list_foreach_reverse_safe(ipv6_destination_t, entry, &ipv6_destination_cache) {
-        if (entry->lifetime == 0 || gc_count > cache_short_term(true)) {
+        if (entry->lifetime == 0 || gc_count > destination_cache_config.short_term_entries) {
             ns_list_remove(&ipv6_destination_cache, entry);
             ipv6_destination_release(entry);
-            if (--gc_count <= cache_long_term(true)) {
+            if (--gc_count <= destination_cache_config.long_term_entries) {
                 break;
             }
         }
@@ -1099,6 +1188,7 @@ static const char *route_src_names[] = {
 /* (Others are assumed to be always reachable) */
 static const bool ipv6_route_probing[ROUTE_MAX] = {
     [ROUTE_RADV] = true,
+    [ROUTE_ARO] = true,
     [ROUTE_RPL_DAO] = true,
     [ROUTE_RPL_DIO] = true,
     [ROUTE_RPL_ROOT] = true,
@@ -1141,14 +1231,14 @@ static void ipv6_route_print(const ipv6_route_t *route, route_print_fn_t *print_
     ROUTE_PRINT_ADDR_STR_BUFFER_INIT(addr_str);
     if (route->lifetime != 0xFFFFFFFF) {
         print_fn(" %24s/%-3u if:%u src:'%s' id:%d lifetime:%"PRIu32,
-               ROUTE_PRINT_ADDR_STR_FORMAT(addr_str, addr), route->prefix_len, route->info.interface_id,
-               route_src_names[route->info.source], route->info.source_id, route->lifetime
-              );
+                 ROUTE_PRINT_ADDR_STR_FORMAT(addr_str, addr), route->prefix_len, route->info.interface_id,
+                 route_src_names[route->info.source], route->info.source_id, route->lifetime
+                );
     } else {
         print_fn(" %24s/%-3u if:%u src:'%s' id:%d lifetime:infinite",
-               ROUTE_PRINT_ADDR_STR_FORMAT(addr_str, addr), route->prefix_len, route->info.interface_id,
-               route_src_names[route->info.source], route->info.source_id
-              );
+                 ROUTE_PRINT_ADDR_STR_FORMAT(addr_str, addr), route->prefix_len, route->info.interface_id,
+                 route_src_names[route->info.source], route->info.source_id
+                );
     }
     if (route->on_link) {
         print_fn("     On-link (met %d)", total_metric(route));
@@ -1225,7 +1315,7 @@ static bool ipv6_route_same_router(const ipv6_route_t *a, const ipv6_route_t *b)
 static void ipv6_route_probe(ipv6_route_t *route)
 {
     ipv6_neighbour_cache_t *ncache = ipv6_neighbour_cache_by_interface_id(route->info.interface_id);
-    if (!ncache || !ncache->send_nud_probes || route->probe_timer) {
+    if (!ncache || !ncache->probe_avoided_routers || route->probe_timer) {
         return;
     }
 
@@ -1378,7 +1468,7 @@ ipv6_route_t *ipv6_route_choose_next_hop(const uint8_t *dest, int8_t interface_i
                 continue;
             }
 
-            if (ncache->send_nud_probes && ipv6_route_probing[route->info.source]) {
+            if (ncache->probe_avoided_routers && ipv6_route_probing[route->info.source]) {
                 /* Going via a router - check reachability, as per RFC 4191.
                  * This only applies for certain routes (currently those from RAs) */
                 reachable = ipv6_neighbour_addr_is_probably_reachable(ncache, route->info.next_hop_addr);
@@ -1478,7 +1568,7 @@ ipv6_route_t *ipv6_route_lookup_with_info(const uint8_t *prefix, uint8_t prefix_
 
 uint8_t ipv6_route_pref_to_metric(int_fast8_t pref)
 {
-    if (pref <-1 || pref > +1) {
+    if (pref < -1 || pref > +1) {
         pref = 0;
     }
     return PREF_TO_METRIC(pref);
@@ -1589,6 +1679,7 @@ ipv6_route_t *ipv6_route_add_metric(const uint8_t *prefix, uint8_t prefix_len, i
             route->metric = metric;
             changed_info = UPDATED;
         }
+
     }
 
     if (changed_info != UNCHANGED) {

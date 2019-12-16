@@ -1,15 +1,16 @@
 /*
- * Copyright (c) 2016-2018 ARM Limited. All rights reserved.
+ * Copyright (c) 2016-2018, Arm Limited and affiliates.
  * SPDX-License-Identifier: Apache-2.0
- * Licensed under the Apache License, Version 2.0 (the License); you may
- * not use this file except in compliance with the License.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an AS IS BASIS, WITHOUT
- * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
@@ -17,11 +18,18 @@
 // Include before mbed.h to properly get UINT*_C()
 #include "ns_types.h"
 
-#include "mbed.h"
 #include "platform/SingletonPtr.h"
 #include "platform/arm_hal_timer.h"
 #include "platform/arm_hal_interrupt.h"
-#include <mbed_assert.h>
+#include "platform/mbed_assert.h"
+#include "Timeout.h"
+#include "Timer.h"
+#include "Ticker.h"
+#include "events/Event.h"
+#include "events/mbed_shared_queues.h"
+
+using namespace mbed;
+using namespace events;
 
 static SingletonPtr<Timer> timer;
 static SingletonPtr<Timeout> timeout;
@@ -38,6 +46,61 @@ static EventQueue *equeue;
 static uint32_t due;
 static void (*arm_hal_callback)(void);
 
+#if defined(NS_EVENTLOOP_USE_TICK_TIMER)
+
+#if MBED_CONF_NANOSTACK_HAL_CRITICAL_SECTION_USABLE_FROM_INTERRUPT
+static SingletonPtr<Ticker> tick_ticker;
+#endif
+
+static int tick_timer_id;
+static void (*tick_timer_cb)(void);
+
+int8_t platform_tick_timer_register(void (*tick_timer_cb_handler)(void))
+{
+#if !MBED_CONF_NANOSTACK_HAL_CRITICAL_SECTION_USABLE_FROM_INTERRUPT
+    equeue = mbed_highprio_event_queue();
+    MBED_ASSERT(equeue != NULL);
+#endif
+
+    tick_timer_cb = tick_timer_cb_handler;
+    return 0;
+}
+
+int8_t platform_tick_timer_start(uint32_t period_ms)
+{
+    int8_t retval = -1;
+    if (tick_timer_cb && tick_timer_id == 0) {
+#if !MBED_CONF_NANOSTACK_HAL_CRITICAL_SECTION_USABLE_FROM_INTERRUPT
+        tick_timer_id = equeue->call_every(period_ms, tick_timer_cb);
+        if (tick_timer_id != 0) {
+            retval = 0;
+        }
+#else
+        tick_ticker->attach_us(tick_timer_cb, period_ms * 1000);
+        tick_timer_id = 1;
+        retval = 0;
+#endif
+    }
+    return retval;
+}
+
+int8_t platform_tick_timer_stop(void)
+{
+    int8_t retval = -1;
+    if (tick_timer_id != 0) {
+#if !MBED_CONF_NANOSTACK_HAL_CRITICAL_SECTION_USABLE_FROM_INTERRUPT
+        equeue->cancel(tick_timer_id);
+#else
+        tick_ticker->detach();
+#endif
+        tick_timer_id = 0;
+        retval = 0;
+    }
+    return retval;
+}
+#endif // NS_EVENTLOOP_USE_TICK_TIMER
+
+
 // Called once at boot
 void platform_timer_enable(void)
 {
@@ -45,8 +108,8 @@ void platform_timer_enable(void)
     equeue = mbed_highprio_event_queue();
     MBED_ASSERT(equeue != NULL);
 #endif
-    // Prime the SingletonPtrs - can't construct from IRQ/critical section
-    timer.get();
+    timer->start();
+    // Prime the SingletonPtr - can't construct from IRQ/critical section
     timeout.get();
 }
 
@@ -88,7 +151,7 @@ uint16_t platform_timer_get_remaining_slots(void)
 {
     uint32_t elapsed = timer->read_us();
     if (elapsed < due) {
-        return (uint16_t) ((due - elapsed) / 50);
+        return (uint16_t)((due - elapsed) / 50);
     } else {
         return 0;
     }

@@ -1,5 +1,6 @@
 /* mbed Microcontroller Library
  * Copyright (c) 2006-2013 ARM Limited
+ * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,10 +22,13 @@
 #include "platform/NonCopyable.h"
 
 namespace mbed {
-/** \addtogroup drivers */
+/**
+ * \defgroup drivers_BusOut BusOut class
+ * \ingroup drivers-public-api-gpio
+ * @{
+ */
 
 /** A digital output bus, used for setting the state of a collection of pins
- * @ingroup drivers
  */
 class BusOut : private NonCopyable<BusOut> {
 
@@ -108,7 +112,7 @@ public:
      * \sa BusOut::read()
      */
     operator int();
-
+#if !defined(DOXYGEN_ONLY)
 protected:
     virtual void lock();
     virtual void unlock();
@@ -121,7 +125,10 @@ protected:
     int _nc_mask;
 
     PlatformMutex _mutex;
+#endif
 };
+
+/** @}*/
 
 } // namespace mbed
 

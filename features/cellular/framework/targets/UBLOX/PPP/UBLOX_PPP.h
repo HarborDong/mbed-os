@@ -18,23 +18,22 @@
 #ifndef UBLOX_PPP_H_
 #define UBLOX_PPP_H_
 
+#ifdef TARGET_FF_ARDUINO
+#ifndef MBED_CONF_UBLOX_PPP_TX
+#define MBED_CONF_UBLOX_PPP_TX D1
+#endif
+#ifndef MBED_CONF_UBLOX_PPP_RX
+#define MBED_CONF_UBLOX_PPP_RX D0
+#endif
+#endif /* TARGET_FF_ARDUINO */
+
 #include "AT_CellularDevice.h"
 
 namespace mbed {
 
 class UBLOX_PPP : public AT_CellularDevice {
-
 public:
-    UBLOX_PPP(events::EventQueue &queue);
-    virtual ~UBLOX_PPP();
-
-public: // CellularDevice
-    virtual CellularNetwork *open_network(FileHandle *fh);
-    virtual CellularPower *open_power(FileHandle *fh);
-};
-
-MBED_DEPRECATED_SINCE("mbed-os-5.9", "This API will be deprecated, Use UBLOX_PPP instead of UBLOX_LISA_U.")
-class UBLOX_LISA_U : public UBLOX_PPP {
+    UBLOX_PPP(FileHandle *fh);
 };
 
 } // namespace mbed

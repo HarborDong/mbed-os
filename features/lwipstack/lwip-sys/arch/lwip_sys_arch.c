@@ -47,6 +47,12 @@
 #  else
 #     define ETHMEM_SECTION __attribute__((section("AHBSRAM0"),aligned))
 #  endif
+#elif defined(TARGET_STM32H7)
+#  if defined (__ICCARM__)
+#     define ETHMEM_SECTION
+#  else
+#     define ETHMEM_SECTION __attribute__((section(".ethusbram")))
+#  endif
 #else
 #define ETHMEM_SECTION
 #endif
@@ -168,11 +174,11 @@ void sys_mbox_post(sys_mbox_t *mbox, void *msg) {
 
     int state = osKernelLock();
 
-    mbox->queue[mbox->post_idx % MB_SIZE] = msg;
-    mbox->post_idx += 1;
+    mbox->queue[mbox->post_idx] = msg;
+    mbox->post_idx = (mbox->post_idx + 1) % MB_SIZE;
 
     osEventFlagsSet(mbox->id, SYS_MBOX_FETCH_EVENT);
-    if (mbox->post_idx - mbox->fetch_idx == MB_SIZE-1)
+    if ((mbox->post_idx + 1) % MB_SIZE == mbox->fetch_idx)
         osEventFlagsClear(mbox->id, SYS_MBOX_POST_EVENT);
 
     osKernelRestoreLock(state);
@@ -201,15 +207,21 @@ err_t sys_mbox_trypost(sys_mbox_t *mbox, void *msg) {
 
     int state = osKernelLock();
 
-    mbox->queue[mbox->post_idx % MB_SIZE] = msg;
-    mbox->post_idx += 1;
+    mbox->queue[mbox->post_idx] = msg;
+    mbox->post_idx = (mbox->post_idx + 1) % MB_SIZE;
 
     osEventFlagsSet(mbox->id, SYS_MBOX_FETCH_EVENT);
-    if (mbox->post_idx - mbox->fetch_idx == MB_SIZE-1)
+    if ((mbox->post_idx + 1) % MB_SIZE == mbox->fetch_idx)
         osEventFlagsClear(mbox->id, SYS_MBOX_POST_EVENT);
 
     osKernelRestoreLock(state);
     return ERR_OK;
+}
+
+err_t
+sys_mbox_trypost_fromisr(sys_mbox_t *q, void *msg)
+{
+  return sys_mbox_trypost(q, msg);
 }
 
 /*---------------------------------------------------------------------------*
@@ -249,8 +261,8 @@ u32_t sys_arch_mbox_fetch(sys_mbox_t *mbox, void **msg, u32_t timeout) {
     int state = osKernelLock();
 
     if (msg)
-        *msg = mbox->queue[mbox->fetch_idx % MB_SIZE];
-    mbox->fetch_idx += 1;
+        *msg = mbox->queue[mbox->fetch_idx];
+    mbox->fetch_idx = (mbox->fetch_idx + 1) % MB_SIZE;
 
     osEventFlagsSet(mbox->id, SYS_MBOX_POST_EVENT);
     if (mbox->post_idx == mbox->fetch_idx)
@@ -285,8 +297,8 @@ u32_t sys_arch_mbox_tryfetch(sys_mbox_t *mbox, void **msg) {
     int state = osKernelLock();
 
     if (msg)
-        *msg = mbox->queue[mbox->fetch_idx % MB_SIZE];
-    mbox->fetch_idx += 1;
+        *msg = mbox->queue[mbox->fetch_idx];
+    mbox->fetch_idx = (mbox->fetch_idx + 1) % MB_SIZE;
 
     osEventFlagsSet(mbox->id, SYS_MBOX_POST_EVENT);
     if (mbox->post_idx == mbox->fetch_idx)
@@ -426,19 +438,10 @@ void sys_init(void) {
     lwip_sys_mutex_attr.name = "lwip_sys_mutex";
     lwip_sys_mutex_attr.cb_mem = &lwip_sys_mutex_data;
     lwip_sys_mutex_attr.cb_size = sizeof(lwip_sys_mutex_data);
+    lwip_sys_mutex_attr.attr_bits = osMutexPrioInherit | osMutexRecursive;
     lwip_sys_mutex = osMutexNew(&lwip_sys_mutex_attr);
     if (lwip_sys_mutex == NULL)
         MBED_ERROR(MBED_MAKE_ERROR(MBED_MODULE_NETWORK_STACK, MBED_ERROR_CODE_INITIALIZATION_FAILED), "sys_init error, mutex initialization failed\n");
-}
-
-/*---------------------------------------------------------------------------*
- * Routine:  sys_jiffies
- *---------------------------------------------------------------------------*
- * Description:
- *      Used by PPP as a timestamp-ish value
- *---------------------------------------------------------------------------*/
-u32_t sys_jiffies(void) {
-    return osKernelGetTickCount();
 }
 
 /*---------------------------------------------------------------------------*
@@ -589,7 +592,7 @@ void lwip_mbed_tracef_error(const char *fmt, ...)
     va_end(ap);
 }
 
-void lwip_mbed_assert_fail(const char *msg, const char *func, const char *file, unsigned int line)
+MBED_NORETURN void lwip_mbed_assert_fail(const char *msg, const char *func, const char *file, unsigned int line)
 {
     mbed_tracef(TRACE_LEVEL_ERROR, "lwIP", "Assertion failed: %s, function %s, file %s, line %u.", msg, func, file, line);
     exit(EXIT_FAILURE); // XXX how about abort? mbed_assert uses exit, so follow suit
@@ -605,7 +608,7 @@ void lwip_mbed_assert_fail(const char *msg, const char *func, const char *file, 
     \param[in]    line  Line number in file with error
     \param[in]    file  Filename with error
  */
-void assert_printf(char *msg, int line, char *file) {
+MBED_NORETURN void assert_printf(const char *msg, int line, const char *file) {
     if (msg)
         error("%s:%d in file %s\n", msg, line, file);
     else

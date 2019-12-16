@@ -21,6 +21,7 @@
 #include "unity/unity.h"
 #include "utest.h"
 #include "udp_tests.h"
+#include "CellularDevice.h"
 
 using namespace utest::v1;
 
@@ -29,7 +30,7 @@ static const int SIGNAL_SIGIO = 0x1;
 static const int SIGIO_TIMEOUT = 5000; //[ms]
 static const int RECV_TIMEOUT = 1; //[s]
 
-static const int BURST_CNT = 100;
+static const int BURST_CNT = 20;
 static const int BURST_PKTS = 5;
 static const int PKG_SIZES[BURST_PKTS] = {100, 200, 300, 120, 500};
 static const int RECV_TOTAL = 1220;
@@ -70,15 +71,19 @@ static void _sigio_handler(osThreadId id)
 
 void UDPSOCKET_ECHOTEST_BURST()
 {
+#ifdef MBED_CONF_APP_BAUD_RATE
+    CellularDevice::get_default_instance()->set_baud_rate(MBED_CONF_APP_BAUD_RATE);
+#endif
+
     SocketAddress udp_addr;
-    get_interface()->gethostbyname(MBED_CONF_APP_ECHO_SERVER_ADDR, &udp_addr);
-    udp_addr.set_port(MBED_CONF_APP_ECHO_SERVER_PORT);
+    NetworkInterface::get_default_instance()->gethostbyname(ECHO_SERVER_ADDR, &udp_addr);
+    udp_addr.set_port(ECHO_SERVER_PORT);
 
     UDPSocket sock;
     const int TIMEOUT = 5000; // [ms]
-    TEST_ASSERT_EQUAL(NSAPI_ERROR_OK, sock.open(get_interface()));
+    TEST_ASSERT_EQUAL(NSAPI_ERROR_OK, sock.open(NetworkInterface::get_default_instance()));
     sock.set_timeout(TIMEOUT);
-    sock.sigio(callback(_sigio_handler, Thread::gettid()));
+    sock.sigio(callback(_sigio_handler, ThisThread::get_id()));
 
     // TX buffers to be preserved for comparison
     prepare_tx_buffers();
@@ -91,7 +96,11 @@ void UDPSOCKET_ECHOTEST_BURST()
     SocketAddress temp_addr;
     for (int i = 0; i < BURST_CNT; i++) {
         for (int x = 0; x < BURST_PKTS; x++) {
-            TEST_ASSERT_EQUAL(tx_buffers[x].len, sock.sendto(udp_addr, tx_buffers[x].payload, tx_buffers[x].len));
+            int sent = sock.sendto(udp_addr, tx_buffers[x].payload, tx_buffers[x].len);
+            if (check_oversized_packets(sent, tx_buffers[x].len)) {
+                TEST_IGNORE_MESSAGE("This device does not handle oversized packets");
+            }
+            TEST_ASSERT_EQUAL(tx_buffers[x].len, sent);
         }
 
         bt_total = 0;
@@ -105,12 +114,12 @@ void UDPSOCKET_ECHOTEST_BURST()
                 }
             } else if (recvd < 0) {
                 pkg_fail += BURST_PKTS - j; // Assume all the following packets of the burst to be lost
-                printf("[%02d] network error %d\n", i, recvd);
-                wait(recv_timeout);
+                tr_error("[%02d] network error %d", i, recvd);
+                ThisThread::sleep_for(recv_timeout * 1000);
                 recv_timeout *= 2; // Back off,
                 break;
             } else if (temp_addr != udp_addr) {
-                printf("[%02d] packet from wrong address\n", i);
+                tr_info("[%02d] packet from wrong address", i);
                 --j;
                 continue;
             }
@@ -130,33 +139,37 @@ void UDPSOCKET_ECHOTEST_BURST()
             ok_bursts++;
         } else {
             drop_bad_packets(sock, TIMEOUT);
-            printf("[%02d] burst failure\n", i);
+            tr_error("[%02d] burst failure, rcv %d", i, bt_total);
         }
     }
 
     free_tx_buffers();
 
     double loss_ratio = 1 - ((double)(BURST_CNT * BURST_PKTS - pkg_fail) / (double)(BURST_CNT * BURST_PKTS));
-    printf("Packets sent: %d, packets received %d, loss ratio %.2lf\r\n",
-           BURST_CNT * BURST_PKTS, BURST_CNT * BURST_PKTS - pkg_fail, loss_ratio);
+    tr_info("Packets sent: %d, packets received %d, loss ratio %.2lf",
+            BURST_CNT * BURST_PKTS, BURST_CNT * BURST_PKTS - pkg_fail, loss_ratio);
     // Packet loss up to 30% tolerated
     TEST_ASSERT_DOUBLE_WITHIN(TOLERATED_LOSS_RATIO, EXPECTED_LOSS_RATIO, loss_ratio);
     // 70% of the bursts need to be successful
-    TEST_ASSERT_INT_WITHIN(3 * (BURST_CNT / 10), BURST_CNT, ok_bursts);
+    TEST_ASSERT(BURST_CNT - ok_bursts < 3 * (BURST_CNT / 10));
 
     TEST_ASSERT_EQUAL(NSAPI_ERROR_OK, sock.close());
 }
 
 void UDPSOCKET_ECHOTEST_BURST_NONBLOCK()
 {
+#ifdef MBED_CONF_APP_BAUD_RATE
+    CellularDevice::get_default_instance()->set_baud_rate(MBED_CONF_APP_BAUD_RATE);
+#endif
+
     SocketAddress udp_addr;
-    get_interface()->gethostbyname(MBED_CONF_APP_ECHO_SERVER_ADDR, &udp_addr);
-    udp_addr.set_port(MBED_CONF_APP_ECHO_SERVER_PORT);
+    NetworkInterface::get_default_instance()->gethostbyname(ECHO_SERVER_ADDR, &udp_addr);
+    udp_addr.set_port(ECHO_SERVER_PORT);
 
     UDPSocket sock;
-    TEST_ASSERT_EQUAL(NSAPI_ERROR_OK, sock.open(get_interface()));
+    TEST_ASSERT_EQUAL(NSAPI_ERROR_OK, sock.open(NetworkInterface::get_default_instance()));
     sock.set_blocking(false);
-    sock.sigio(callback(_sigio_handler, Thread::gettid()));
+    sock.sigio(callback(_sigio_handler, ThisThread::get_id()));
 
     // TX buffers to be preserved for comparison
     prepare_tx_buffers();
@@ -168,7 +181,12 @@ void UDPSOCKET_ECHOTEST_BURST_NONBLOCK()
     int bt_total = 0;
     for (int i = 0; i < BURST_CNT; i++) {
         for (int x = 0; x < BURST_PKTS; x++) {
-            TEST_ASSERT_EQUAL(tx_buffers[x].len, sock.sendto(udp_addr, tx_buffers[x].payload, tx_buffers[x].len));
+            nsapi_size_or_error_t sent = sock.sendto(udp_addr, tx_buffers[x].payload, tx_buffers[x].len);
+            if (sent != NSAPI_ERROR_WOULD_BLOCK) {
+                TEST_ASSERT_EQUAL(tx_buffers[x].len, sent);
+            } else {
+                x--;
+            }
         }
 
         recvd = 0;
@@ -197,7 +215,7 @@ void UDPSOCKET_ECHOTEST_BURST_NONBLOCK()
                     goto PKT_OK;
                 }
             }
-            printf("[bt#%02d] corrupted packet...", i);
+            tr_error("[bt#%02d] corrupted packet...", i);
             pkg_fail++;
             break;
 PKT_OK:
@@ -215,12 +233,12 @@ PKT_OK:
     free_tx_buffers();
 
     double loss_ratio = 1 - ((double)(BURST_CNT * BURST_PKTS - pkg_fail) / (double)(BURST_CNT * BURST_PKTS));
-    printf("Packets sent: %d, packets received %d, loss ratio %.2lf\r\n",
-           BURST_CNT * BURST_PKTS, BURST_CNT * BURST_PKTS - pkg_fail, loss_ratio);
+    tr_info("Packets sent: %d, packets received %d, loss ratio %.2lf",
+            BURST_CNT * BURST_PKTS, BURST_CNT * BURST_PKTS - pkg_fail, loss_ratio);
     // Packet loss up to 30% tolerated
     TEST_ASSERT_DOUBLE_WITHIN(TOLERATED_LOSS_RATIO, EXPECTED_LOSS_RATIO, loss_ratio);
     // 70% of the bursts need to be successful
-    TEST_ASSERT_INT_WITHIN(3 * (BURST_CNT / 10), BURST_CNT, ok_bursts);
+    TEST_ASSERT(BURST_CNT - ok_bursts < 3 * (BURST_CNT / 10));
 
     TEST_ASSERT_EQUAL(NSAPI_ERROR_OK, sock.close());
 }

@@ -19,22 +19,43 @@
 #define NETWORKSTACKSTUB_H
 
 #include "netsocket/NetworkStack.h"
+#include <list>
 
+/*
+ * Note: If you want to:
+ * - control and/or set expectations for the data returned/sent from/to the stack
+ * - set expectations on the calls to NetworkStack
+ * See OnboardNetworkStack_mock.h and its OnboardNetworkStackMock class.
+ */
 
 class NetworkStackstub : public NetworkStack {
 public:
-    nsapi_error_t return_value = 0;
+    std::list<nsapi_error_t> return_values;
+    nsapi_error_t return_value;
+    SocketAddress return_socketAddress;
+
+    NetworkStackstub() :
+        return_value(0),
+        return_socketAddress()
+    {
+    }
+
     virtual const char *get_ip_address()
     {
         return "127.0.0.1";
     }
+    virtual nsapi_error_t get_ip_address(SocketAddress* address)
+    {
+        address->set_ip_address("127.0.0.1");
+        return NSAPI_ERROR_OK;
+    }
     virtual nsapi_error_t gethostbyname(const char *host,
-                                        SocketAddress *address, nsapi_version_t version)
+                                        SocketAddress *address, nsapi_version_t version, const char *interface_name)
     {
         return return_value;
     }
-    virtual nsapi_value_or_error_t gethostbyname_async(const char *host, hostbyname_cb_t callback,
-                                                       nsapi_version_t version)
+    virtual nsapi_value_or_error_t gethostbyname_async(const char *host, hostbyname_cb_t callback, nsapi_version_t version,
+                                                       const char *interface_name)
     {
         return return_value;
     }
@@ -46,6 +67,12 @@ public:
 protected:
     virtual nsapi_error_t socket_open(nsapi_socket_t *handle, nsapi_protocol_t proto)
     {
+        if (return_value == NSAPI_ERROR_OK && return_values.front() == NSAPI_ERROR_OK) {
+            // Make sure a non-NULL value is returned if error is not expected
+            *handle = reinterpret_cast<nsapi_socket_t *>(1234);
+        } else {
+            *handle = NULL;
+        }
         return return_value;
     };
     virtual nsapi_error_t socket_close(nsapi_socket_t handle)
@@ -62,21 +89,42 @@ protected:
     };
     virtual nsapi_error_t socket_connect(nsapi_socket_t handle, const SocketAddress &address)
     {
+        if (!return_values.empty()) {
+            nsapi_error_t ret = return_values.front();
+            return_values.pop_front();
+            return ret;
+        }
         return return_value;
     };
     virtual nsapi_error_t socket_accept(nsapi_socket_t server,
                                         nsapi_socket_t *handle, SocketAddress *address = 0)
     {
+        if (return_value == NSAPI_ERROR_OK && return_values.front() == NSAPI_ERROR_OK) {
+            // Make sure a non-NULL value is returned if error is not expected
+            *handle = reinterpret_cast<nsapi_socket_t *>(1234);
+        } else {
+            *handle = NULL;
+        }
         return return_value;
     };
     virtual nsapi_size_or_error_t socket_send(nsapi_socket_t handle,
                                               const void *data, nsapi_size_t size)
     {
+        if (!return_values.empty()) {
+            nsapi_error_t ret = return_values.front();
+            return_values.pop_front();
+            return ret;
+        }
         return return_value;
     };
     virtual nsapi_size_or_error_t socket_recv(nsapi_socket_t handle,
                                               void *data, nsapi_size_t size)
     {
+        if (!return_values.empty()) {
+            nsapi_error_t ret = return_values.front();
+            return_values.pop_front();
+            return ret;
+        }
         return return_value;
     };
     virtual nsapi_size_or_error_t socket_sendto(nsapi_socket_t handle, const SocketAddress &address,
@@ -87,6 +135,14 @@ protected:
     virtual nsapi_size_or_error_t socket_recvfrom(nsapi_socket_t handle, SocketAddress *address,
                                                   void *buffer, nsapi_size_t size)
     {
+        if (return_socketAddress != SocketAddress()) {
+            *address = return_socketAddress;
+        }
+        if (!return_values.empty()) {
+            nsapi_error_t ret = return_values.front();
+            return_values.pop_front();
+            return ret;
+        }
         return return_value;
     };
     virtual void socket_attach(nsapi_socket_t handle, void (*callback)(void *), void *data) {};

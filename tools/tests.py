@@ -14,10 +14,23 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 """
+from past.builtins import cmp
 from tools.paths import *
-from tools.data.support import DEFAULT_SUPPORT, CORTEX_ARM_SUPPORT
 from argparse import ArgumentTypeError
 from tools.utils import columnate
+from tools.targets import TARGETS
+
+DEFAULT_SUPPORT = {}
+CORTEX_ARM_SUPPORT = {}
+
+for target in TARGETS:
+    DEFAULT_SUPPORT[target.name] = target.supported_toolchains
+
+    if target.core.startswith('Cortex'):
+        CORTEX_ARM_SUPPORT[target.name] = [
+            t for t in target.supported_toolchains
+            if (t == 'ARM' or t == 'uARM')
+        ]
 
 TEST_CMSIS_LIB = join(TEST_DIR, "cmsis", "lib")
 TEST_MBED_LIB = join(TEST_DIR, "mbed", "env")
@@ -845,7 +858,7 @@ except:
     TEST_GROUPS = {}
 GROUPS.update(TEST_GROUPS)
 
-class Test:
+class Test(object):
     DEFAULTS = {
         #'mcu': None,
         'description': None,

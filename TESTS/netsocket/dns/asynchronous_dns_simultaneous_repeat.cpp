@@ -15,6 +15,8 @@
  * limitations under the License.
  */
 
+#if defined(MBED_CONF_RTOS_PRESENT)
+
 #include "mbed.h"
 #include "greentea-client/test_env.h"
 #include "unity.h"
@@ -32,15 +34,16 @@ int result_exp_timeout;
 
 void ASYNCHRONOUS_DNS_SIMULTANEOUS_REPEAT()
 {
-
-    for (int i = 0; i < 100; i++) {
+    nsapi_dns_reset();
+    for (int i = 0; i < 10; i++) {
         do_asynchronous_gethostbyname(dns_test_hosts, MBED_CONF_APP_DNS_SIMULT_QUERIES + 1, &result_ok, &result_no_mem,
                                       &result_dns_failure, &result_exp_timeout);
 
         // For 1st round can fail to no memory, on other rounds some of the addresses are found from cache
         TEST_ASSERT(result_ok == MBED_CONF_APP_DNS_SIMULT_QUERIES || result_ok == MBED_CONF_APP_DNS_SIMULT_QUERIES + 1);
         TEST_ASSERT(result_no_mem == 1 || result_no_mem == 0); // last query fails for 1st round to no memory as expected
-        TEST_ASSERT(result_dns_failure == 0);
-        TEST_ASSERT(result_exp_timeout == 0);
+        TEST_ASSERT_EQUAL(0, result_dns_failure);
+        TEST_ASSERT_EQUAL(0, result_exp_timeout);
     }
 }
+#endif // defined(MBED_CONF_RTOS_PRESENT)

@@ -13,6 +13,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+#if !defined(MBED_CONF_RTOS_PRESENT)
+#error [NOT_SUPPORTED] LORADIO test cases require a RTOS to run.
+#else
 
 #include "utest.h"
 #include "unity.h"
@@ -36,8 +39,10 @@
 #error [NOT_SUPPORTED] Requires parameters from application config file.
 #endif
 
+#if (MBED_CONF_APP_LORA_RADIO == SX1272) || (MBED_CONF_APP_LORA_RADIO == SX1276)
 
 using namespace utest::v1;
+using namespace mbed;
 
 static LoRaRadio *radio = NULL;
 rtos::Semaphore event_sem(0);
@@ -124,7 +129,7 @@ void test_set_tx_config()
 
     TEST_ASSERT_EQUAL(RF_TX_RUNNING, radio->get_status());
 
-    TEST_ASSERT_EQUAL(1, event_sem.wait(1000));
+    TEST_ASSERT_TRUE(event_sem.try_acquire_for(1000));
     TEST_ASSERT_EQUAL(EV_TX_DONE, received_event);
     received_event = EV_NONE;
 }
@@ -144,7 +149,7 @@ void test_set_rx_config()
 
     TEST_ASSERT_EQUAL(RF_RX_RUNNING, radio->get_status());
 
-    TEST_ASSERT_EQUAL(1, event_sem.wait(1000));
+    TEST_ASSERT_TRUE(event_sem.try_acquire_for(1000));
 
     // Nobody was sending to us so timeout is expected.
     TEST_ASSERT_EQUAL(EV_RX_TIMEOUT, received_event);
@@ -280,3 +285,6 @@ int main()
 {
     return !Harness::run(specification);
 }
+
+#endif // (MBED_CONF_APP_LORA_RADIO == SX1272) || (MBED_CONF_APP_LORA_RADIO == SX1276)
+#endif // !defined(MBED_CONF_RTOS_PRESENT)

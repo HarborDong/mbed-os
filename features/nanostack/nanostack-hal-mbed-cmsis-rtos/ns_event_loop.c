@@ -1,18 +1,21 @@
 /*
- * Copyright (c) 2016-2018 ARM Limited. All rights reserved.
+ * Copyright (c) 2016-2018, Arm Limited and affiliates.
  * SPDX-License-Identifier: Apache-2.0
- * Licensed under the Apache License, Version 2.0 (the License); you may
- * not use this file except in compliance with the License.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an AS IS BASIS, WITHOUT
- * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+#ifdef MBED_CONF_RTOS_PRESENT
 
 #include "mbed_assert.h"
 #include "cmsis.h"
@@ -43,11 +46,11 @@ static osEventFlagsId_t event_flag_id;
 
 #ifndef MBED_TZ_DEFAULT_ACCESS
 #define MBED_TZ_DEFAULT_ACCESS   0
-#endif    
-    
+#endif
+
 static void event_loop_thread(void *arg);
 
-static uint64_t event_thread_stk[MBED_CONF_NANOSTACK_HAL_EVENT_LOOP_THREAD_STACK_SIZE/8];
+static uint64_t event_thread_stk[MBED_CONF_NANOSTACK_HAL_EVENT_LOOP_THREAD_STACK_SIZE / 8];
 static mbed_rtos_storage_thread_t event_thread_tcb;
 static const osThreadAttr_t event_thread_attr = {
     .name = "nanostack_event_thread",
@@ -129,3 +132,5 @@ void ns_event_loop_thread_start(void)
 #endif
 
 #endif // !MBED_CONF_NANOSTACK_HAL_EVENT_LOOP_USE_MBED_EVENTS
+
+#endif //MBED_CONF_RTOS_PRESENT

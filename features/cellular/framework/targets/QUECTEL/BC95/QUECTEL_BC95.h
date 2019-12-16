@@ -18,20 +18,32 @@
 #ifndef QUECTEL_BC95_H_
 #define QUECTEL_BC95_H_
 
+#ifdef TARGET_FF_ARDUINO
+#ifndef MBED_CONF_QUECTEL_BC95_TX
+#define MBED_CONF_QUECTEL_BC95_TX D1
+#endif
+#ifndef MBED_CONF_QUECTEL_BC95_RX
+#define MBED_CONF_QUECTEL_BC95_RX D0
+#endif
+#endif /* TARGET_FF_ARDUINO */
+
 #include "AT_CellularDevice.h"
 
 namespace mbed {
 
 class QUECTEL_BC95 : public AT_CellularDevice {
 public:
+    QUECTEL_BC95(FileHandle *fh);
 
-    QUECTEL_BC95(events::EventQueue &queue);
-    virtual ~QUECTEL_BC95();
+public: // AT_CellularDevice
+    virtual nsapi_error_t get_sim_state(SimState &state);
 
-public: // CellularDevice
-    virtual CellularNetwork *open_network(FileHandle *fh);
-    virtual CellularPower *open_power(FileHandle *fh);
-    virtual CellularSIM *open_sim(FileHandle *fh);
+protected: // AT_CellularDevice
+    virtual AT_CellularNetwork *open_network_impl(ATHandler &at);
+    virtual AT_CellularContext *create_context_impl(ATHandler &at, const char *apn, bool cp_req = false, bool nonip_req = false);
+    virtual AT_CellularInformation *open_information_impl(ATHandler &at);
+    virtual nsapi_error_t set_baud_rate_impl(int baud_rate);
+    virtual nsapi_error_t init();
 
 public: // NetworkInterface
     void handle_urc(FileHandle *fh);

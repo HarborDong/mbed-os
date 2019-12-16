@@ -23,14 +23,12 @@ import logging
 import sys
 import argparse
 from os.path import join, abspath, dirname, basename
-from os import getenv
 
 from manifesttool import create, parse, verify, cert, init, update
 from manifesttool.argparser import MainArgumentParser
 from mbed_cloud import AccountManagementAPI, CertificatesAPI
 import colorama
 colorama.init()
-
 
 LOG = logging.getLogger(__name__)
 LOG_FORMAT = '[%(levelname)s] %(asctime)s - %(name)s - %(message)s'
@@ -41,9 +39,26 @@ sys.path.insert(0, ROOT)
 
 from tools.config import Config
 from tools.options import extract_mcus
+from tools.utils import generate_update_filename
 
 
 class MbedExtendedArgs(MainArgumentParser):
+
+    def __init__(self, *args, **kwargs):
+        MainArgumentParser.__init__(self, *args, **kwargs)
+        self.parser.prog = "mbed device-management"
+        self.parser.description = (
+            "Create or transform a manifest. "
+            "Use {} [command] -h for help on each command."
+        ).format(self.parser.prog)
+        for initIndex in range(len(self.parser._subparsers._actions)):
+            try:
+                if 'init' in (self.parser._subparsers._actions[initIndex]).choices:
+                    initParser = self.parser._subparsers._actions[initIndex].choices['init']
+            except TypeError:
+                pass
+        initParser.add_argument('--no-developer-cert', help='Do not download the developer certificate')
+
     def _addCreateArgs(self, parser, exclusions=[]):
         if 'payload' not in exclusions:
             parser.add_argument(
@@ -57,6 +72,7 @@ class MbedExtendedArgs(MainArgumentParser):
             parser.add_argument('-m', '--mcu')
             parser.add_argument('-t', '--toolchain')
             parser.add_argument('--source', nargs='+', dest='source_dir')
+            parser.add_argument('--custom-targets', dest='custom_targets_directory')
             parser.add_argument('--build')
             exclusions.append('payload')
         super(MbedExtendedArgs, self)._addCreateArgs(parser, exclusions)
@@ -69,31 +85,49 @@ def wrap_payload(func):
             sources = options.source_dir or ['.']
             config = Config(mcus[0], sources)
             app_name = config.name or basename(abspath(sources[0]))
-            output_ext = getattr(config.target, "OUTPUT_EXT", "bin")
-            payload_name = join(options.build, "{}_application.{}".format(
-                app_name, output_ext
-            ))
+            payload_name = join(options.build, generate_update_filename(app_name, config.target))
             options.payload = open(payload_name, "rb")
+        if not options.payload:
+            LOG.error("No Payload specified. Please use \"-t\" and \"-m\" or \"-p\" to specify a payload ")
+            exit(1)
         return func(options)
     return inner
 
 
 def wrap_init(func):
     def inner(options):
-        accounts = AccountManagementAPI()
-        certs = CertificatesAPI()
-        api_key = accounts.list_api_keys(filter={
-            'key': getenv("MBED_CLOUD_SDK_API_KEY")
-        }).next()
-        user = accounts.get_user(api_key.owner_id)
+        config = {}
+        if getattr(options, 'api_key'):
+            config["api_key"] = options.api_key
+        if getattr(options, 'server_address'):
+            config["host"] = options.server_address
+
+        try:
+            accounts = AccountManagementAPI(config)
+            certs = CertificatesAPI(config)
+        except Exception as e:
+            LOG.error(
+                'Missing api key. Set it with '
+                '"mbed config -G CLOUD_SDK_API_KEY <api key>"'
+            )
+            exit(1)
+
+        # Get the currently in-use API key (may come from environment or
+        # configuration files, which is handled by the cloud SDK)
+        api_key_value = accounts.config.get("api_key")
+        api_key = next(accounts.list_api_keys(
+            filter={
+                "key": api_key_value
+            }
+        ))
         certificates_owned = list(certs.list_certificates())
         dev_cert_info = None
         for certif in certificates_owned:
-            if certif.type == "developer" and (certif.owner_id == user.id or
+            if certif.type == "developer" and (certif.owner_id == api_key.owner_id or
                                                certif.owner_id == api_key.id):
                 dev_cert_info = certs.get_certificate(certif.id)
-                LOG.info("Found developer certificate onwed by %s named %s",
-                         user.full_name, dev_cert_info.name)
+                LOG.info("Found developer certificate named %s",
+                         dev_cert_info.name)
                 break
         else:
             LOG.warning(
@@ -101,13 +135,16 @@ def wrap_init(func):
                 " Generting a new developer certificate."
             )
             dev_cert_info = CertificatesAPI().add_developer_certificate(
-                "mbed-cli-auto {}".format(user.full_name),
+                "mbed-cli-auto {}".format(api_key.name),
                 description="cetificate auto-generated by Mbed CLI"
             )
-        LOG.info("Writing developer certificate %s into c file "
+        if getattr(options, 'no_developer_cert'):
+            LOG.info("Skipping download of developer certificate")
+        else:
+            LOG.info("Writing developer certificate %s into c file "
                  "mbed_cloud_dev_credentials.c", dev_cert_info.name)
-        with open("mbed_cloud_dev_credentials.c", "w") as fout:
-            fout.write(dev_cert_info.header_file)
+            with open("mbed_cloud_dev_credentials.c", "w") as fout:
+                fout.write(dev_cert_info.header_file)
         return func(options)
     return inner
 

@@ -270,7 +270,7 @@ typedef enum {
     SPI_CS      = D10,
     PWM_OUT     = D9,
 
-    /**** USB pins ****/
+    /**** USB FS pins ****/
     USB_OTG_FS_DM = PA_11,
     USB_OTG_FS_DP = PA_12,
     USB_OTG_FS_ID = PA_10,
@@ -310,6 +310,15 @@ typedef enum {
     QSPI_FLASH1_IO3 = PD_13,
     QSPI_FLASH1_SCK = PB_2,
     QSPI_FLASH1_CSN = PG_6,
+
+    /**** WIFI ISM43362 pins ****/
+    ISM43362_WIFI_MISO      = PB_4,
+    ISM43362_WIFI_MOSI      = PB_5,
+    ISM43362_WIFI_SCLK      = PB_12,
+    ISM43362_WIFI_NSS       = PG_11,
+    ISM43362_WIFI_RESET     = PH_1,
+    ISM43362_WIFI_DATAREADY = PG_12,
+    ISM43362_WIFI_WAKEUP    = PB_15,
 
     // Not connected
     NC = (int)0xFFFFFFFF

@@ -18,20 +18,19 @@
 
 #include "platform/FileHandle.h"
 
-
 #define POS_IS_VALID(pos) (pos >= 0 && pos < _end)
 #define NEW_POS_IS_VALID(pos) (pos >= 0 && pos < (int32_t)FILE_SIZE)
 #define SEEK_POS_IS_VALID(pos) (pos >= 0 && pos <= _end)
 #define INVALID_POS (-1)
 
 template<uint32_t FILE_SIZE>
-class TestFile : public FileHandle {
+class TestFile : public mbed::FileHandle {
 public:
     TestFile(): _pos(0), _end(0) {}
     ~TestFile() {}
 
     enum FunctionName {
-        fnNone, fnRead, fnWrite, fnSeek, fnClose, fnIsatty
+        fnNone, fnRead, fnWrite, fnSeek, fnClose, fnIsatty, fnTruncate
     };
 
     virtual ssize_t read(void *buffer, size_t size)
@@ -105,6 +104,24 @@ public:
     virtual int close()
     {
         _fnCalled = fnClose;
+        return 0;
+    }
+
+    virtual off_t size()
+    {
+        return _end;
+    }
+
+    virtual int truncate(off_t length)
+    {
+        _fnCalled = fnTruncate;
+        if (!NEW_POS_IS_VALID(length)) {
+            return -EINVAL;
+        }
+        while (_end < length) {
+            _data[_end++] = 0;
+        }
+        _end = length;
         return 0;
     }
 

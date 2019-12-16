@@ -1,4 +1,20 @@
+/* Copyright (c) 2018 Renesas Electronics Corporation.
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 #include "cmsis_os.h"
+#include "rtos/ThisThread.h"
 #include "netsocket/nsapi_types.h"
 #include "mbed_shared_queues.h"
 #include "ethernet_api.h"
@@ -157,7 +173,7 @@ void RZ_A1_EMAC::_recv_callback(void) {
 }
 
 void RZ_A1_EMAC::recv_callback(void) {
-    recvThread.signal_set(1);
+    recvThread.flags_set(1);
 }
 
 void RZ_A1_EMAC::recv_task(void) {
@@ -166,7 +182,7 @@ void RZ_A1_EMAC::recv_task(void) {
     int            cnt;
 
     while (1) {
-        rtos::Thread::signal_wait(1);
+        rtos::ThisThread::flags_wait_all(1);
         for (cnt = 0; cnt < 16; cnt++) {
             recv_size = ethernet_receive();
             if (recv_size == 0) {

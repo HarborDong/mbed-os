@@ -23,11 +23,17 @@
 #include "lwip/api.h"
 
 #include "LWIPStack.h"
+#include "lwip_tools.h"
 
 #include "netsocket/nsapi_types.h"
 
+#if !LWIP_IPV4 || !LWIP_IPV6
+static bool all_zeros(const uint8_t *p, int len);
+#endif
+
 /* LWIP error remapping */
-nsapi_error_t LWIP::err_remap(err_t err) {
+nsapi_error_t LWIP::err_remap(err_t err)
+{
     switch (err) {
         case ERR_OK:
         case ERR_CLSD:
@@ -58,9 +64,10 @@ nsapi_error_t LWIP::err_remap(err_t err) {
     }
 }
 
-#if LWIP_IPV4
+
 const ip_addr_t *LWIP::get_ipv4_addr(const struct netif *netif)
 {
+#if LWIP_IPV4
     if (!netif_is_up(netif)) {
         return NULL;
     }
@@ -68,14 +75,30 @@ const ip_addr_t *LWIP::get_ipv4_addr(const struct netif *netif)
     if (!ip4_addr_isany(netif_ip4_addr(netif))) {
         return netif_ip_addr4(netif);
     }
-
+#endif
     return NULL;
 }
-#endif
 
+const ip_addr_t *LWIP::get_ipv6_link_local_addr(const struct netif *netif)
+{
 #if LWIP_IPV6
+    if (!netif_is_up(netif)) {
+        return NULL;
+    }
+
+    for (int i = 0; i < LWIP_IPV6_NUM_ADDRESSES; i++) {
+        if (ip6_addr_isvalid(netif_ip6_addr_state(netif, i)) &&
+                ip6_addr_islinklocal(netif_ip6_addr(netif, i))) {
+            return netif_ip_addr6(netif, i);
+        }
+    }
+#endif
+    return NULL;
+}
+
 const ip_addr_t *LWIP::get_ipv6_addr(const struct netif *netif)
 {
+#if LWIP_IPV6
     if (!netif_is_up(netif)) {
         return NULL;
     }
@@ -87,9 +110,14 @@ const ip_addr_t *LWIP::get_ipv6_addr(const struct netif *netif)
         }
     }
 
+    for (int i = 0; i < LWIP_IPV6_NUM_ADDRESSES; i++) {
+        if (ip6_addr_isvalid(netif_ip6_addr_state(netif, i))) {
+            return netif_ip_addr6(netif, i);
+        }
+    }
+#endif
     return NULL;
 }
-#endif
 
 bool LWIP::is_local_addr(const ip_addr_t *ip_addr)
 {
@@ -103,7 +131,7 @@ bool LWIP::is_local_addr(const ip_addr_t *ip_addr)
         if (IP_IS_V6(ip_addr)) {
             for (int i = 0; i < LWIP_IPV6_NUM_ADDRESSES; i++) {
                 if (ip6_addr_isvalid(netif_ip6_addr_state(netif, i)) &&
-                    ip6_addr_cmp(netif_ip6_addr(netif, i), ip_2_ip6(ip_addr))) {
+                        ip6_addr_cmp(netif_ip6_addr(netif, i), ip_2_ip6(ip_addr))) {
                     return true;
                 }
             }
@@ -113,7 +141,7 @@ bool LWIP::is_local_addr(const ip_addr_t *ip_addr)
 #if LWIP_IPV4
         if (IP_IS_V4(ip_addr)) {
             if (!ip4_addr_isany(netif_ip4_addr(netif)) &&
-                ip4_addr_cmp(netif_ip4_addr(netif), ip_2_ip4(ip_addr))) {
+                    ip4_addr_cmp(netif_ip4_addr(netif), ip_2_ip4(ip_addr))) {
                 return true;
             }
         }
@@ -185,10 +213,90 @@ void LWIP::arena_dealloc(struct mbed_lwip_socket *s)
         index = next_registered_multicast_member(s, index);
 
         setsockopt(s, NSAPI_SOCKET, NSAPI_DROP_MEMBERSHIP, &s->multicast_memberships[index],
-            sizeof(s->multicast_memberships[index]));
+                   sizeof(s->multicast_memberships[index]));
         index++;
     }
 
     free(s->multicast_memberships);
     s->multicast_memberships = NULL;
 }
+
+bool convert_lwip_addr_to_mbed(nsapi_addr_t *out, const ip_addr_t *in)
+{
+#if LWIP_IPV6
+    if (IP_IS_V6(in)) {
+        out->version = NSAPI_IPv6;
+        SMEMCPY(out->bytes, ip_2_ip6(in), sizeof(ip6_addr_t));
+        return true;
+    }
+#endif
+#if LWIP_IPV4
+    if (IP_IS_V4(in)) {
+        out->version = NSAPI_IPv4;
+        SMEMCPY(out->bytes, ip_2_ip4(in), sizeof(ip4_addr_t));
+        return true;
+    }
+#endif
+#if LWIP_IPV6 && LWIP_IPV4
+    return false;
+#endif
+}
+
+bool convert_mbed_addr_to_lwip(ip_addr_t *out, const nsapi_addr_t *in)
+{
+#if LWIP_IPV6
+    if (in->version == NSAPI_IPv6) {
+        IP_SET_TYPE(out, IPADDR_TYPE_V6);
+        SMEMCPY(ip_2_ip6(out), in->bytes, sizeof(ip6_addr_t));
+        return true;
+    }
+#if !LWIP_IPV4
+    /* For bind() and other purposes, need to accept "null" of other type */
+    /* (People use IPv4 0.0.0.0 as a general null) */
+    if (in->version == NSAPI_UNSPEC ||
+            (in->version == NSAPI_IPv4 && all_zeros(in->bytes, 4))) {
+        ip_addr_set_zero_ip6(out);
+        return true;
+    }
+#endif
+#endif
+
+#if LWIP_IPV4
+    if (in->version == NSAPI_IPv4) {
+        IP_SET_TYPE(out, IPADDR_TYPE_V4);
+        SMEMCPY(ip_2_ip4(out), in->bytes, sizeof(ip4_addr_t));
+        return true;
+    }
+#if !LWIP_IPV6
+    /* For symmetry with above, accept IPv6 :: as a general null */
+    if (in->version == NSAPI_UNSPEC ||
+            (in->version == NSAPI_IPv6 && all_zeros(in->bytes, 16))) {
+        ip_addr_set_zero_ip4(out);
+        return true;
+    }
+#endif
+#endif
+
+#if LWIP_IPV4 && LWIP_IPV6
+    if (in->version == NSAPI_UNSPEC) {
+        ip6_addr_set_zero(ip_2_ip6(out));
+        IP_SET_TYPE(out, IPADDR_TYPE_ANY);
+        return true;
+    }
+#endif
+
+    return false;
+}
+
+#if !LWIP_IPV4 || !LWIP_IPV6
+static bool all_zeros(const uint8_t *p, int len)
+{
+    for (int i = 0; i < len; i++) {
+        if (p[i]) {
+            return false;
+        }
+    }
+
+    return true;
+}
+#endif

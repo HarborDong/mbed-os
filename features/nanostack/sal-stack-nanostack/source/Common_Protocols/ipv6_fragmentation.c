@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2018, Arm Limited and affiliates.
+ * Copyright (c) 2015-2019, Arm Limited and affiliates.
  * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -36,7 +36,7 @@
 #include "nsdynmemLIB.h"
 #include <string.h>
 #include "ns_trace.h"
-#include "Core/include/socket.h"
+#include "Core/include/ns_socket.h"
 #include "NWK_INTERFACE/Include/protocol.h"
 #include "Common_Protocols/ip.h"
 #include "Common_Protocols/ipv6.h"
@@ -125,9 +125,9 @@ static void free_datagram(ip_fragmented_datagram_t *dgram)
  */
 uint16_t ipv6_frag_set_mru(uint16_t frag_mru)
 {
-    frag_mru = (frag_mru + 7) &~ UINT16_C(7);
+    frag_mru = (frag_mru + 7) & ~ UINT16_C(7);
     if (frag_mru < IPV6_MIN_FRAG_MRU) {
-        frag_mru = (IPV6_MIN_FRAG_MRU + 7) &~ UINT16_C(7);
+        frag_mru = (IPV6_MIN_FRAG_MRU + 7) & ~ UINT16_C(7);
     }
     if (ipv6_frag_mru != frag_mru) {
         /* I don't want to worry about the complications of changing MRU while

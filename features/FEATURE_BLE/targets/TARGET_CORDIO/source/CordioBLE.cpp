@@ -17,6 +17,7 @@
 #include "mbed.h"
 #include "us_ticker_api.h"
 #include "BLE.h"
+#include "CriticalSectionLock.h"
 #include "wsf_types.h"
 #include "wsf_msg.h"
 #include "wsf_os.h"
@@ -40,6 +41,10 @@
 /*! WSF handler ID */
 wsfHandlerId_t stack_handler_id;
 
+/* WSF heap allocation */
+uint8_t *SystemHeapStart;
+uint32_t SystemHeapSize;
+
 /**
  * Weak definition of ble_cordio_get_hci_driver.
  * A runtime error is generated if the user does not define any
@@ -47,7 +52,8 @@ wsfHandlerId_t stack_handler_id;
  */
 MBED_WEAK ble::vendor::cordio::CordioHCIDriver& ble_cordio_get_hci_driver()
 {
-    error("Please provide an implementation for the HCI driver");
+    MBED_ASSERT("No HCI driver");
+    printf("Please provide an implementation for the HCI driver");
     ble::vendor::cordio::CordioHCIDriver* bad_instance = NULL;
     return *bad_instance;
 }
@@ -74,7 +80,7 @@ extern "C" void hci_mbed_os_handle_reset_sequence(uint8_t* msg)
  * This function will signal to the user code by calling signalEventsToProcess.
  * It is registered and called into the Wsf Stack.
  */
-extern "C" void wsf_mbed_ble_signal_event(void)
+extern "C" MBED_WEAK void wsf_mbed_ble_signal_event(void)
 {
     ble::vendor::cordio::BLE::deviceInstance().signalEventsToProcess(::BLE::DEFAULT_INSTANCE);
 }
@@ -95,7 +101,8 @@ namespace cordio {
 BLE::BLE(CordioHCIDriver& hci_driver) :
     initialization_status(NOT_INITIALIZED),
     instanceID(::BLE::DEFAULT_INSTANCE),
-    _event_queue()
+    _event_queue(),
+    _last_update_us(0)
 {
     _hci_driver = &hci_driver;
     stack_setup();
@@ -120,6 +127,8 @@ ble_error_t BLE::init(
 {
     switch (initialization_status) {
         case NOT_INITIALIZED:
+            _timer.reset();
+            _timer.start();
             _event_queue.initialize(this, instanceID);
             _init_callback = initCallback;
             start_stack_reset();
@@ -150,8 +159,14 @@ ble_error_t BLE::shutdown()
     initialization_status = NOT_INITIALIZED;
     _hci_driver->terminate();
 
+#if BLE_FEATURE_GATT_SERVER
     getGattServer().reset();
+#endif
+
+#if BLE_FEATURE_GATT_CLIENT
     getGattClient().reset();
+#endif // BLE_FEATURE_GATT_CLIENT
+
     getGap().reset();
     _event_queue.clear();
 
@@ -164,25 +179,26 @@ const char* BLE::getVersion()
     return version;
 }
 
-generic::GenericGap& BLE::getGap()
+impl::GenericGapImpl& BLE::getGap()
 {
     static pal::vendor::cordio::GenericAccessService cordio_gap_service;
-    static ble::generic::GenericGap gap(
+    static impl::GenericGapImpl gap(
         _event_queue,
-        pal::vendor::cordio::Gap::get_gap(),
+        impl::PalGapImpl::get_gap(),
         cordio_gap_service,
-        pal::vendor::cordio::CordioSecurityManager::get_security_manager()
+        impl::PalSecurityManagerImpl::get_security_manager()
     );
 
     return gap;
 }
 
-const generic::GenericGap& BLE::getGap() const
+const impl::GenericGapImpl& BLE::getGap() const
 {
     BLE &self = const_cast<BLE&>(*this);
-    return const_cast<const generic::GenericGap&>(self.getGap());
+    return const_cast<const impl::GenericGapImpl&>(self.getGap());
 };
 
+#if BLE_FEATURE_GATT_SERVER
 GattServer& BLE::getGattServer()
 {
     return cordio::GattServer::getInstance();
@@ -192,22 +208,32 @@ const GattServer& BLE::getGattServer() const
 {
     return cordio::GattServer::getInstance();
 }
+#endif // BLE_FEATURE_GATT_SERVER
 
-generic::GenericGattClient& BLE::getGattClient()
+#if BLE_FEATURE_GATT_CLIENT
+impl::GenericGattClientImpl& BLE::getGattClient()
 {
-    static pal::AttClientToGattClientAdapter pal_client(
-        pal::vendor::cordio::CordioAttClient::get_client()
-    );
-    static generic::GenericGattClient client(&pal_client);
+    static impl::GenericGattClientImpl gatt_client(&getPalGattClient());
 
-    return client;
+    return gatt_client;
 }
 
+impl::PalGattClientImpl& BLE::getPalGattClient()
+{
+    static impl::PalGattClientImpl pal_client(
+        pal::vendor::cordio::CordioAttClient::get_client()
+    );
+
+    return pal_client;
+}
+#endif // BLE_FEATURE_GATT_CLIENT
+
+#if BLE_FEATURE_SECURITY
 SecurityManager& BLE::getSecurityManager()
 {
-    static SigningEventMonitorProxy signing_event_monitor(*this);
-    static generic::GenericSecurityManager m_instance(
-        pal::vendor::cordio::CordioSecurityManager::get_security_manager(),
+    static vendor::cordio::SigningEventMonitor<impl::GenericSecurityManagerImpl> signing_event_monitor;
+    static impl::GenericSecurityManagerImpl m_instance(
+        impl::PalSecurityManagerImpl::get_security_manager(),
         getGap(),
         signing_event_monitor
     );
@@ -220,6 +246,7 @@ const SecurityManager& BLE::getSecurityManager() const
     const BLE &self = const_cast<BLE&>(*this);
     return const_cast<const SecurityManager&>(self.getSecurityManager());
 }
+#endif // BLE_FEATURE_SECURITY
 
 void BLE::waitForEvent()
 {
@@ -249,9 +276,11 @@ void BLE::processEvents()
         return;
     }
 
-    if (ble::pal::vendor::cordio::CordioSecurityManager::get_security_manager().sm_handler(msg)) {
+#if BLE_FEATURE_SECURITY
+    if (impl::PalSecurityManagerImpl::get_security_manager().sm_handler(msg)) {
         return;
     }
+#endif // BLE_FEATURE_SECURITY
 
     switch(msg->event) {
         case DM_RESET_CMPL_IND: {
@@ -259,19 +288,52 @@ void BLE::processEvents()
                 ::BLE::Instance(::BLE::DEFAULT_INSTANCE),
                 BLE_ERROR_NONE
             };
+#if BLE_FEATURE_EXTENDED_ADVERTISING
+            // initialize extended module if supported
+            if (HciGetLeSupFeat() & HCI_LE_SUP_FEAT_LE_EXT_ADV) {
+#if BLE_ROLE_BROADCASTER
+                DmExtAdvInit();
+#endif // BLE_ROLE_BROADCASTER
+#if BLE_ROLE_OBSERVER
+                DmExtScanInit();
+#endif // BLE_ROLE_OBSERVER
+#if BLE_ROLE_CENTRAL
+                DmExtConnMasterInit();
+#endif // BLE_ROLE_CENTRAL
+#if BLE_ROLE_PERIPHERAL
+                DmExtConnSlaveInit();
+#endif // BLE_ROLE_PERIPHERAL
+            }
+#endif // BLE_FEATURE_EXTENDED_ADVERTISING
+#if BLE_FEATURE_GATT_SERVER
             deviceInstance().getGattServer().initialize();
+#endif
             deviceInstance().initialization_status = INITIALIZED;
             _init_callback.call(&context);
         }   break;
 
         default:
-            ble::pal::vendor::cordio::Gap::gap_handler(msg);
+            impl::PalGapImpl::gap_handler(msg);
             break;
     }
 }
 
 void BLE::device_manager_cb(dmEvt_t* dm_event)
 {
+    if (dm_event->hdr.status == HCI_SUCCESS && dm_event->hdr.event == DM_CONN_DATA_LEN_CHANGE_IND) {
+        // this event can only happen after a connection has been established therefore gap is present
+        impl::PalGapImpl::EventHandler *handler;
+        handler = impl::PalGapImpl::get_gap().get_event_handler();
+        if (handler) {
+            handler->on_data_length_change(
+                dm_event->hdr.param,
+                dm_event->dataLenChange.maxTxOctets,
+                dm_event->dataLenChange.maxRxOctets
+            );
+        }
+        return;
+    }
+
     BLE::deviceInstance().stack_handler(0, &dm_event->hdr);
 }
 
@@ -311,70 +373,161 @@ void BLE::stack_setup()
 
     buf_pool_desc_t buf_pool_desc = _hci_driver->get_buffer_pool_description();
 
-    // Initialize buffers with the ones provided by the HCI driver
-    uint16_t bytes_used = WsfBufInit(
-        buf_pool_desc.buffer_size, buf_pool_desc.buffer_memory,
-        buf_pool_desc.pool_count, buf_pool_desc.pool_description
-    );
+    // use the buffer for the WSF heap
+    SystemHeapStart = buf_pool_desc.buffer_memory;
+    SystemHeapSize = buf_pool_desc.buffer_size;
 
+    // Initialize buffers with the ones provided by the HCI driver
+    uint16_t bytes_used = WsfBufInit(buf_pool_desc.pool_count, (wsfBufPoolDesc_t*)buf_pool_desc.pool_description);
+
+    // Raise assert if not enough memory was allocated
     MBED_ASSERT(bytes_used != 0);
 
-    WsfTimerInit();
-    SecInit();
+    SystemHeapStart += bytes_used;
+    SystemHeapSize -= bytes_used;
 
-    // Note: enable once security is supported
+    // This warning will be raised if we've allocated too much memory
+    if(bytes_used < buf_pool_desc.buffer_size)
+    {
+        MBED_WARNING1(MBED_MAKE_ERROR(MBED_MODULE_BLE, MBED_ERROR_CODE_INVALID_SIZE), "Too much memory allocated for Cordio memory pool, reduce buf_pool_desc.buffer_size by value below.", buf_pool_desc.buffer_size - bytes_used);
+    }
+
+    WsfTimerInit();
+
+    // Note: SecInit required for RandInit.
+    SecInit();
     SecRandInit();
+
+#if BLE_FEATURE_SECURITY
     SecAesInit();
     SecCmacInit();
     SecEccInit();
+#endif
 
     handlerId = WsfOsSetNextHandler(HciHandler);
     HciHandlerInit(handlerId);
 
     handlerId = WsfOsSetNextHandler(DmHandler);
-    DmAdvInit();
-    DmScanInit();
-    DmConnInit();
-    DmConnMasterInit();
-    DmConnSlaveInit();
-    DmSecInit();
-    DmPhyInit();
 
-    // Note: enable once security is supported
+#if BLE_ROLE_BROADCASTER
+    DmAdvInit();
+#endif
+
+#if BLE_ROLE_OBSERVER
+    DmScanInit();
+#endif
+
+#if BLE_FEATURE_CONNECTABLE
+    DmConnInit();
+#endif
+
+#if BLE_ROLE_CENTRAL
+    DmConnMasterInit();
+#endif
+
+#if BLE_ROLE_PERIPHERAL
+    DmConnSlaveInit();
+#endif
+
+#if BLE_FEATURE_SECURITY
+    DmSecInit();
+#endif
+
+#if BLE_FEATURE_PHY_MANAGEMENT
+    DmPhyInit();
+#endif
+
+#if BLE_FEATURE_SECURE_CONNECTIONS
     DmSecLescInit();
+#endif
+
+#if BLE_FEATURE_PRIVACY
     DmPrivInit();
+#endif
+
     DmHandlerInit(handlerId);
 
+#if BLE_ROLE_PERIPHERAL
     handlerId = WsfOsSetNextHandler(L2cSlaveHandler);
     L2cSlaveHandlerInit(handlerId);
-    L2cInit();
-    L2cSlaveInit();
-    L2cMasterInit();
+#endif
 
+#if BLE_FEATURE_CONNECTABLE
+    L2cInit();
+#endif
+
+#if BLE_ROLE_PERIPHERAL
+    L2cSlaveInit();
+#endif
+
+#if BLE_ROLE_CENTRAL
+    L2cMasterInit();
+#endif
+
+#if BLE_FEATURE_ATT
     handlerId = WsfOsSetNextHandler(AttHandler);
     AttHandlerInit(handlerId);
+
+#if BLE_FEATURE_GATT_SERVER
     AttsInit();
     AttsIndInit();
-    AttsSignInit();
+#if BLE_FEATURE_SECURITY
     AttsAuthorRegister(GattServer::atts_auth_cb);
-    AttcInit();
-    AttcSignInit();
+#endif
+#if BLE_FEATURE_SIGNING
+    AttsSignInit();
+#endif
+#endif // BLE_FEATURE_GATT_SERVER
 
+#if BLE_FEATURE_GATT_CLIENT
+    AttcInit();
+#if BLE_FEATURE_SIGNING
+    AttcSignInit();
+#endif
+#endif // BLE_FEATURE_GATT_CLIENT
+
+#endif // BLE_FEATURE_ATT
+
+#if BLE_FEATURE_SECURITY
     handlerId = WsfOsSetNextHandler(SmpHandler);
     SmpHandlerInit(handlerId);
+
+#if BLE_ROLE_PERIPHERAL
     SmprInit();
+#if BLE_FEATURE_SECURE_CONNECTIONS
     SmprScInit();
+#endif
+#endif
+
+#if BLE_ROLE_CENTRAL
     SmpiInit();
+#if BLE_FEATURE_SECURE_CONNECTIONS
     SmpiScInit();
+#endif
+#endif // BLE_ROLE_CENTRAL
+
+#endif // BLE_FEATURE_SECURITY
 
     stack_handler_id = WsfOsSetNextHandler(&BLE::stack_handler);
 
-    HciSetMaxRxAclLen(100);
+    HciSetMaxRxAclLen(MBED_CONF_CORDIO_RX_ACL_BUFFER_SIZE);
 
     DmRegister(BLE::device_manager_cb);
+#if BLE_FEATURE_CONNECTABLE
     DmConnRegister(DM_CLIENT_ID_APP, BLE::device_manager_cb);
+#endif
+
+#if BLE_FEATURE_GATT_SERVER
     AttConnRegister(BLE::connection_handler);
+#endif
+
+#if BLE_FEATURE_ATT
+#if BLE_FEATURE_GATT_CLIENT
     AttRegister((attCback_t) ble::pal::vendor::cordio::CordioAttClient::att_client_handler);
+#else
+    AttRegister((attCback_t) ble::vendor::cordio::GattServer::att_cb);
+#endif // BLE_FEATURE_GATT_CLIENT
+#endif
 }
 
 void BLE::start_stack_reset()
@@ -388,27 +541,32 @@ void BLE::callDispatcher()
     // process the external event queue
     _event_queue.process();
 
-    // follow by stack events
-    static uint32_t lastTimeUs = us_ticker_read();
-    uint32_t currTimeUs, deltaTimeMs;
+    _last_update_us += (uint64_t)_timer.read_high_resolution_us();
+    _timer.reset();
 
-    // Update the current cordio time
-    currTimeUs = us_ticker_read();
-    deltaTimeMs = (currTimeUs - lastTimeUs) / 1000;
-    if (deltaTimeMs > 0) {
-        WsfTimerUpdate(deltaTimeMs / WSF_MS_PER_TICK);
-        lastTimeUs += deltaTimeMs * 1000;
+    uint64_t last_update_ms   = (_last_update_us / 1000);
+    wsfTimerTicks_t wsf_ticks = (last_update_ms / WSF_MS_PER_TICK);
+
+    if (wsf_ticks > 0) {
+        WsfTimerUpdate(wsf_ticks);
+
+        _last_update_us -= (last_update_ms * 1000);
     }
 
     wsfOsDispatcher();
 
+    static LowPowerTimeout nextTimeout;
+    CriticalSectionLock critical_section;
+
     if (wsfOsReadyToSleep()) {
-        static Timeout nextTimeout;
         // setup an mbed timer for the next Cordio timeout
         bool_t pTimerRunning;
         timestamp_t nextTimestamp = (timestamp_t) (WsfTimerNextExpiration(&pTimerRunning) * WSF_MS_PER_TICK) * 1000;
         if (pTimerRunning) {
             nextTimeout.attach_us(timeoutCallback, nextTimestamp);
+        } else {
+            critical_section.disable();
+            _hci_driver->on_host_stack_inactivity();
         }
     }
 }
@@ -416,6 +574,16 @@ void BLE::callDispatcher()
 CordioHCIDriver* BLE::_hci_driver = NULL;
 
 FunctionPointerWithContext< ::BLE::InitializationCompleteCallbackContext*> BLE::_init_callback;
+
+template<>
+void SigningEventMonitor<impl::GenericSecurityManagerImpl>::set_signing_event_handler_(impl::GenericSecurityManagerImpl *handler) {
+#if BLE_FEATURE_GATT_CLIENT
+    BLE::deviceInstance().getGattClient().set_signing_event_handler(handler);
+#endif // BLE_FEATURE_GATT_CLIENT
+#if BLE_FEATURE_GATT_SERVER
+    BLE::deviceInstance().getGattServer().set_signing_event_handler(handler);
+#endif // BLE_FEATURE_GATT_SERVER
+}
 
 } // namespace cordio
 } // namespace vendor

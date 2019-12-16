@@ -24,17 +24,11 @@ namespace mbed {
 
 class QUECTEL_BC95_CellularNetwork : public AT_CellularNetwork {
 public:
-    QUECTEL_BC95_CellularNetwork(ATHandler &atHandler);
+    QUECTEL_BC95_CellularNetwork(ATHandler &atHandler, AT_CellularDevice &device);
     virtual ~QUECTEL_BC95_CellularNetwork();
 
 protected:
-    virtual NetworkStack *get_stack();
-
     virtual nsapi_error_t set_access_technology_impl(RadioAccessTechnology opRat);
-
-    virtual bool get_modem_stack_type(nsapi_ip_stack_t requested_stack);
-
-    virtual RegistrationMode has_registration(RegistrationType reg_type);
 };
 } // namespace mbed
 #endif // QUECTEL_BC95_CELLULAR_NETWORK_H_

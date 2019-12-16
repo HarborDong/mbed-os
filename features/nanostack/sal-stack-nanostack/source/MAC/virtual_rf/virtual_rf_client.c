@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2018, Arm Limited and affiliates.
+ * Copyright (c) 2016-2019, Arm Limited and affiliates.
  * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -31,7 +31,7 @@
 
 static phy_device_driver_s device_driver;
 static int8_t rf_driver_id = (-1);
-static const phy_rf_channel_configuration_s phy_2_4ghz = {2405000000, 5000000, 250000, 16, M_OQPSK};
+static const phy_rf_channel_configuration_s phy_2_4ghz = {.channel_0_center_frequency = 2405000000, .channel_spacing = 5000000, .datarate = 250000, .number_of_channels = 16, .modulation = M_OQPSK};
 static const phy_device_channel_page_s phy_channel_pages = { CHANNEL_PAGE_0, &phy_2_4ghz};
 
 static int8_t phy_rf_rx(const uint8_t *data_ptr, uint16_t data_len, uint8_t link_quality, int8_t dbm, int8_t driver_id)
@@ -107,7 +107,7 @@ static int8_t phy_rf_virtual_config_send(int8_t driver_id, const uint8_t *data, 
     return device_driver.arm_net_virtual_tx_cb(&data_req, driver_id);
 }
 
-static int8_t phy_rf_virtual_rx(const uint8_t *data_ptr, uint16_t data_len,int8_t driver_id)
+static int8_t phy_rf_virtual_rx(const uint8_t *data_ptr, uint16_t data_len, int8_t driver_id)
 {
     if (rf_driver_id != driver_id || !data_ptr) {
         return -1;
@@ -138,7 +138,7 @@ static int8_t phy_rf_virtual_rx(const uint8_t *data_ptr, uint16_t data_len,int8_
                 return -1;
             }
             phy_msg.id = MACTUN_MLME_NAP_EXTENSION;
-            phy_msg.message.mlme_request.primitive = (mlme_primitive) *data_ptr++;
+            phy_msg.message.mlme_request.primitive = (mlme_primitive) * data_ptr++;
             phy_msg.message.mlme_request.mlme_ptr = data_ptr;
             phy_msg.message.mlme_request.ptr_length = (data_len - 2);
 
@@ -155,7 +155,7 @@ static int8_t phy_rf_virtual_rx(const uint8_t *data_ptr, uint16_t data_len,int8_
 int8_t virtual_rf_client_register(void)
 {
     if (rf_driver_id < 0) {
-        memset(&device_driver, 0 , sizeof(phy_device_driver_s) );
+        memset(&device_driver, 0, sizeof(phy_device_driver_s));
         device_driver.arm_net_virtual_rx_cb = &phy_rf_virtual_rx;
         device_driver.phy_rx_cb = &phy_rf_rx;
         device_driver.phy_tx_done_cb = &phy_rf_tx_done;

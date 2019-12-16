@@ -15,12 +15,14 @@
  * limitations under the License.
  */
 
+#if defined(MBED_CONF_RTOS_PRESENT)
 #include "mbed.h"
 #include "TCPSocket.h"
 #include "greentea-client/test_env.h"
 #include "unity/unity.h"
 #include "utest.h"
 #include "tcp_tests.h"
+#include "CellularDevice.h"
 
 using namespace utest::v1;
 
@@ -33,10 +35,10 @@ static nsapi_error_t _tcpsocket_connect_to_chargen_srv(TCPSocket &sock)
 {
     SocketAddress tcp_addr;
 
-    get_interface()->gethostbyname(MBED_CONF_APP_ECHO_SERVER_ADDR, &tcp_addr);
+    NetworkInterface::get_default_instance()->gethostbyname(ECHO_SERVER_ADDR, &tcp_addr);
     tcp_addr.set_port(19);
 
-    nsapi_error_t err = sock.open(get_interface());
+    nsapi_error_t err = sock.open(NetworkInterface::get_default_instance());
     if (err != NSAPI_ERROR_OK) {
         return err;
     }
@@ -58,15 +60,19 @@ static nsapi_error_t _tcpsocket_connect_to_chargen_srv(TCPSocket &sock)
  * \param offset Start pattern from offset
  * \param len Length of pattern to generate.
  */
-static void generate_RFC_864_pattern(size_t offset, uint8_t *buf,  size_t len)
+static void generate_RFC_864_pattern(size_t offset, uint8_t *buf,  size_t len, bool is_xinetd)
 {
+    const int row_size = 74; // Number of chars in single row
+    const int row_count = 95; // Number of rows in pattern after which pattern start from beginning
+    const int chars_scope = is_xinetd ? 93 : 95; // Number of chars from ASCII table used in pattern
+    const char first_char = is_xinetd ? '!' : ' '; // First char from ASCII table used in pattern
     while (len--) {
-        if (offset % 74 == 72) {
+        if (offset % row_size == (row_size - 2)) {
             *buf++ = '\r';
-        } else if (offset % 74 == 73) {
+        } else if (offset % row_size == (row_size - 1)) {
             *buf++ = '\n';
         } else {
-            *buf++ = ' ' + (offset % 74 + offset / 74) % 95 ;
+            *buf++ = first_char + (offset % row_size + ((offset / row_size) % row_count)) % chars_scope;
         }
         offset++;
     }
@@ -74,10 +80,14 @@ static void generate_RFC_864_pattern(size_t offset, uint8_t *buf,  size_t len)
 
 static void check_RFC_864_pattern(void *rx_buff, const size_t len, const size_t offset)
 {
+    static bool is_xinetd = false;
     void *ref_buff = malloc(len);
     TEST_ASSERT_NOT_NULL(ref_buff);
 
-    generate_RFC_864_pattern(offset, (uint8_t *)ref_buff, len);
+    if (offset == 0) {
+        is_xinetd = ((uint8_t *)rx_buff)[0] == '!';
+    }
+    generate_RFC_864_pattern(offset, (uint8_t *)ref_buff, len, is_xinetd);
     bool match = memcmp(ref_buff, rx_buff, len) == 0;
 
     free(ref_buff);
@@ -105,11 +115,17 @@ void rcv_n_chk_against_rfc864_pattern(TCPSocket &sock)
         recvd_size += rd;
     }
     timer.stop();
-    printf("MBED: Time taken: %fs\n", timer.read());
+    tr_info("MBED: Time taken: %fs", timer.read());
 }
 
 void TCPSOCKET_RECV_100K()
 {
+    SKIP_IF_TCP_UNSUPPORTED();
+
+#ifdef MBED_CONF_APP_BAUD_RATE
+    CellularDevice::get_default_instance()->set_baud_rate(MBED_CONF_APP_BAUD_RATE);
+#endif
+
     TCPSocket sock;
     if (_tcpsocket_connect_to_chargen_srv(sock) != NSAPI_ERROR_OK) {
         TEST_FAIL();
@@ -137,6 +153,9 @@ void rcv_n_chk_against_rfc864_pattern_nonblock(TCPSocket &sock)
         int rd = sock.recv(buff, buff_size);
         TEST_ASSERT(rd > 0 || rd == NSAPI_ERROR_WOULD_BLOCK);
         if (rd > 0) {
+            if ((unsigned int) rd > buff_size) {
+                TEST_FAIL_MESSAGE("sock.recv returned more than requested.");
+            }
             check_RFC_864_pattern(buff, rd, recvd_size);
             recvd_size += rd;
         } else if (rd == NSAPI_ERROR_WOULD_BLOCK) {
@@ -151,7 +170,7 @@ void rcv_n_chk_against_rfc864_pattern_nonblock(TCPSocket &sock)
         }
     }
     timer.stop();
-    printf("MBED: Time taken: %fs\n", timer.read());
+    tr_info("MBED: Time taken: %fs", timer.read());
 }
 
 static void _sigio_handler(osThreadId id)
@@ -161,6 +180,7 @@ static void _sigio_handler(osThreadId id)
 
 void TCPSOCKET_RECV_100K_NONBLOCK()
 {
+    SKIP_IF_TCP_UNSUPPORTED();
     TCPSocket     sock;
     nsapi_error_t err = _tcpsocket_connect_to_chargen_srv(sock);
 
@@ -170,9 +190,10 @@ void TCPSOCKET_RECV_100K_NONBLOCK()
     }
 
     sock.set_blocking(false);
-    sock.sigio(callback(_sigio_handler, Thread::gettid()));
+    sock.sigio(callback(_sigio_handler, ThisThread::get_id()));
 
     rcv_n_chk_against_rfc864_pattern_nonblock(sock);
 
     TEST_ASSERT_EQUAL(NSAPI_ERROR_OK, sock.close());
 }
+#endif // defined(MBED_CONF_RTOS_PRESENT)

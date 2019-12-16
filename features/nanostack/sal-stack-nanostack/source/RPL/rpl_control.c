@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2018, Arm Limited and affiliates.
+ * Copyright (c) 2015-2019, Arm Limited and affiliates.
  * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -151,17 +151,6 @@ static void rpl_control_publish_own_addresses(rpl_domain_t *domain, rpl_instance
     }
 }
 
-static void rpl_control_publish_own_address(rpl_domain_t *domain, const if_address_entry_t *addr)
-{
-    ns_list_foreach(rpl_instance_t, instance, &domain->instances) {
-        if (!rpl_instance_am_root(instance)) {
-            uint32_t descriptor = 0;
-            bool want_descriptor = rpl_policy_target_descriptor_for_own_address(domain, addr->address, addr->source, addr->data, &descriptor);
-            rpl_instance_publish_dao_target(instance, addr->address, 128, addr->valid_lifetime, true, want_descriptor, descriptor);
-        }
-    }
-}
-
 void rpl_control_publish_host_address(rpl_domain_t *domain, const uint8_t addr[16], uint32_t lifetime)
 {
     ns_list_foreach(rpl_instance_t, instance, &domain->instances) {
@@ -182,47 +171,113 @@ void rpl_control_unpublish_address(rpl_domain_t *domain, const uint8_t addr[16])
     }
 }
 
-static if_address_entry_t *rpl_instance_reg_addr_get(protocol_interface_info_entry_t *interface)
+void rpl_control_request_parent_link_confirmation(bool requested)
 {
-    ns_list_foreach(if_address_entry_t, address, &interface->ip_addresses) {
-        if (!address->addr_reg_done && !addr_is_ipv6_link_local(address->address)) {
-            return address;
-        }
-    }
+    rpl_policy_set_parent_confirmation_request(requested);
+}
 
-    return NULL;
+void rpl_control_set_dio_multicast_min_config_advertisment_count(uint8_t min_count)
+{
+    rpl_policy_set_dio_multicast_config_advertisment_min_count(min_count);
+}
+
+void rpl_control_set_dao_retry_count(uint8_t count)
+{
+    rpl_policy_set_dao_retry_count(count);
+}
+
+void rpl_control_set_initial_dao_ack_wait(uint16_t timeout_in_ms)
+{
+    rpl_policy_set_initial_dao_ack_wait(timeout_in_ms);
 }
 
 /* Send address registration to either specified address, or to non-registered address */
-void rpl_control_register_address(protocol_interface_info_entry_t *interface, if_address_entry_t *addr)
+void rpl_control_register_address(protocol_interface_info_entry_t *interface, const uint8_t addr[16])
 {
-    if_address_entry_t *reg_addr = addr;
-
-    if (!reg_addr) {
-        reg_addr = rpl_instance_reg_addr_get(interface);
-
-        if (!reg_addr) {
-            return;
-        }
+    if (!rpl_policy_parent_confirmation_requested()) {
+        return;
     }
     ns_list_foreach(struct rpl_instance, instance, &interface->rpl_domain->instances) {
-        rpl_instance_send_address_registration(interface, instance, reg_addr);
+        rpl_instance_send_address_registration(instance, addr);
     }
 }
 
-void rpl_control_address_register_done(struct buffer *buf, uint8_t status)
+void rpl_control_address_register_done(protocol_interface_info_entry_t *interface, const uint8_t ll_addr[16], uint8_t status)
 {
-    ns_list_foreach(if_address_entry_t, addr, &buf->interface->ip_addresses) {
+    if (!interface->rpl_domain) {
+        return;
+    }
+    if (!rpl_policy_parent_confirmation_requested()) {
+        return;
+    }
 
-        /* Optimize, ll addresses are not registered anyway.. */
-        if (addr_is_ipv6_link_local(addr->address) || !addr->addr_reg_pend) {
-            continue;
+    ns_list_foreach(struct rpl_instance, instance, &interface->rpl_domain->instances) {
+        rpl_neighbour_t *neighbour = rpl_lookup_neighbour_by_ll_address(instance, ll_addr, interface->id);
+        if (neighbour) {
+            rpl_instance_address_registration_done(interface, instance, neighbour, status);
         }
+    }
+}
 
-        ns_list_foreach(struct rpl_instance, instance, &buf->interface->rpl_domain->instances) {
-            if (rpl_instance_address_registration_done(buf->interface, instance, addr, status)) {
-                return;
-            }
+bool rpl_control_is_dodag_parent(protocol_interface_info_entry_t *interface, const uint8_t ll_addr[16])
+{
+    if (!interface->rpl_domain) {
+        return false;
+    }
+    // go through instances and parents and check if they match the address.
+    ns_list_foreach(struct rpl_instance, instance, &interface->rpl_domain->instances) {
+        if (rpl_instance_address_is_parent(instance, ll_addr)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool rpl_control_is_dodag_parent_candidate(protocol_interface_info_entry_t *interface, const uint8_t ll_addr[16], uint16_t candidate_cmp_limiter)
+{
+    if (!interface->rpl_domain) {
+        return false;
+    }
+    // go through instances and parents and check if they match the address.
+    ns_list_foreach(struct rpl_instance, instance, &interface->rpl_domain->instances) {
+        if (rpl_instance_address_is_candidate(instance, ll_addr, candidate_cmp_limiter)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+
+uint16_t rpl_control_parent_candidate_list_size(protocol_interface_info_entry_t *interface, bool parent_list)
+{
+    if (!interface->rpl_domain) {
+        return 0;
+    }
+
+    uint16_t parent_list_size = 0;
+
+    // go through instances and parents and check if they match the address.
+    ns_list_foreach(struct rpl_instance, instance, &interface->rpl_domain->instances) {
+        uint16_t current_size = rpl_instance_address_candidate_count(instance, parent_list);
+        if (current_size > parent_list_size) {
+            parent_list_size = current_size;
+        }
+    }
+    return parent_list_size;
+}
+
+
+void rpl_control_neighbor_delete(protocol_interface_info_entry_t *interface, const uint8_t ll_addr[16])
+{
+    if (!interface->rpl_domain) {
+        return;
+    }
+    // go through instances and delete address.
+    ns_list_foreach(struct rpl_instance, instance, &interface->rpl_domain->instances) {
+
+        rpl_neighbour_t *neighbour = rpl_lookup_neighbour_by_ll_address(instance, ll_addr, interface->id);
+        if (neighbour) {
+            rpl_delete_neighbour(instance, neighbour);
         }
     }
 }
@@ -241,10 +296,6 @@ static void rpl_control_addr_notifier(struct protocol_interface_info_entry *inte
     }
 
     switch (reason) {
-        case ADDR_CALLBACK_DAD_COMPLETE:
-        case ADDR_CALLBACK_REFRESHED:
-            rpl_control_publish_own_address(interface->rpl_domain, addr);
-            break;
         case ADDR_CALLBACK_DELETED:
             rpl_control_unpublish_address(interface->rpl_domain, addr->address);
             break;
@@ -301,19 +352,27 @@ void rpl_control_delete_domain(rpl_domain_t *domain)
         rpl_delete_instance(instance);
     }
     ns_list_remove(&rpl_domains, domain);
-    rpl_free(domain, sizeof *domain);
+    rpl_free(domain, sizeof * domain);
 }
 
-static void rpl_control_remove_interface_from_domain(protocol_interface_info_entry_t *cur, rpl_domain_t *domain)
+static void rpl_control_remove_interface_from_domain(protocol_interface_info_entry_t *cur, rpl_domain_t *domain, bool free_instances)
 {
     ns_list_foreach(rpl_instance_t, instance, &domain->instances) {
         rpl_instance_remove_interface(instance, cur->id);
     }
+
     ns_list_foreach(if_address_entry_t, addr, &cur->ip_addresses) {
         if (!addr_is_ipv6_link_local(addr->address)) {
             rpl_control_unpublish_address(domain, addr->address);
         }
     }
+
+    if (free_instances) {
+        ns_list_foreach_safe(rpl_instance_t, instance, &domain->instances) {
+            rpl_delete_instance(instance);
+        }
+    }
+
     if (domain->non_storing_downstream_interface == cur->id) {
         domain->non_storing_downstream_interface = -1;
     }
@@ -326,11 +385,7 @@ void rpl_control_set_domain_on_interface(protocol_interface_info_entry_t *cur, r
         cur->rpl_domain = domain;
         addr_add_group(cur, ADDR_LINK_LOCAL_ALL_RPL_NODES);
     }
-    ns_list_foreach(if_address_entry_t, addr, &cur->ip_addresses) {
-        if (!addr_is_ipv6_link_local(addr->address)) {
-            rpl_control_publish_own_address(domain, addr);
-        }
-    }
+
     if (downstream) {
         domain->non_storing_downstream_interface = cur->id;
     }
@@ -342,16 +397,27 @@ void rpl_control_set_domain_on_interface(protocol_interface_info_entry_t *cur, r
 void rpl_control_remove_domain_from_interface(protocol_interface_info_entry_t *cur)
 {
     if (cur->rpl_domain) {
-        rpl_control_remove_interface_from_domain(cur, cur->rpl_domain);
+        rpl_control_remove_interface_from_domain(cur, cur->rpl_domain, false);
         addr_delete_group(cur, ADDR_LINK_LOCAL_ALL_RPL_NODES);
         cur->rpl_domain = NULL;
     }
 }
 
-void rpl_control_set_callback(rpl_domain_t *domain, rpl_domain_callback_t callback, void *cb_handle)
+void rpl_control_free_domain_instances_from_interface(protocol_interface_info_entry_t *cur)
+{
+    if (cur->rpl_domain) {
+        rpl_control_remove_interface_from_domain(cur, cur->rpl_domain, true);
+        addr_delete_group(cur, ADDR_LINK_LOCAL_ALL_RPL_NODES);
+        cur->rpl_domain = NULL;
+    }
+}
+
+void rpl_control_set_callback(rpl_domain_t *domain, rpl_domain_callback_t callback, rpl_prefix_callback_t prefix_learn_cb, rpl_new_parent_callback_t new_parent_add, void *cb_handle)
 {
     domain->callback = callback;
+    domain->prefix_cb = prefix_learn_cb;
     domain->cb_handle = cb_handle;
+    domain->new_parent_add = new_parent_add;
 }
 
 /* To do - this should live somewhere nicer. Basically a bootstrap
@@ -471,7 +537,7 @@ void rpl_control_update_dodag_prefix(rpl_dodag_t *dodag, const uint8_t *prefix, 
     /* Don't let them set weird flags. We do allow them to add prefixes if not
      * a root though - they might want this to add a L prefix?
      */
-    flags &= (PIO_A|PIO_L);
+    flags &= (PIO_A | PIO_L);
     rpl_dodag_update_dio_prefix(dodag, prefix, prefix_len, flags, lifetime, preftime, /*publish=*/true, age);
 }
 
@@ -488,6 +554,14 @@ void rpl_control_increment_dodag_version(rpl_dodag_t *dodag)
         rpl_dodag_set_version_number_as_root(dodag, new_version);
     }
 }
+void rpl_control_update_dodag_config(struct rpl_dodag *dodag, const rpl_dodag_conf_t *conf)
+{
+
+    if (rpl_dodag_am_root(dodag)) {
+        rpl_dodag_update_config(dodag, conf, NULL, NULL);
+    }
+}
+
 
 void rpl_control_set_dodag_pref(rpl_dodag_t *dodag, uint8_t pref)
 {
@@ -662,11 +736,12 @@ static void rpl_control_process_prefix_options(protocol_interface_info_entry_t *
     bool router_addr_set = false;
 
     rpl_neighbour_t *pref_parent = rpl_instance_preferred_parent(instance);
-
-//    const rpl_dodag_conf_t *conf = rpl_dodag_get_config(dodag);
+    if (neighbour == pref_parent) {
+        rpl_dodag_update_unpublished_dio_prefix_start(dodag);
+    }
 
     for (;;) {
-        const uint8_t *ptr = rpl_control_find_option(start, end-start, RPL_PREFIX_INFO_OPTION, 30);
+        const uint8_t *ptr = rpl_control_find_option(start, end - start, RPL_PREFIX_INFO_OPTION, 30);
         if (!ptr) {
             break;
         }
@@ -676,29 +751,22 @@ static void rpl_control_process_prefix_options(protocol_interface_info_entry_t *
         uint32_t preferred = common_read_32_bit(ptr + 8);
         const uint8_t *prefix = ptr + 16;
 
-        if (!pref_parent || neighbour == pref_parent) {
-            //Check is L Flag active
-            if (flags & PIO_L) {
-                //define ONLink Route Information
-                //tr_debug("Register On Link Prefix to routing table");
-                ipv6_route_add(prefix, prefix_len, cur->id, NULL, ROUTE_RADV, valid, 0);
-            }
-            /* Check if A-Flag.
-             * A RPL node may use this option for the purpose of Stateless Address Autoconfiguration (SLAAC)
-             * from a prefix advertised by a parent.
-             */
-            if (pref_parent && (flags & PIO_A)) {
-                if (icmpv6_slaac_prefix_update(cur, prefix, prefix_len, valid, preferred) != 0) {
-                    ipv6_interface_slaac_handler(cur, prefix, prefix_len, valid, preferred);
-                }
-            }
+        if (rpl_upward_accept_prefix_update(dodag, neighbour, pref_parent)) {
 
             /* Store prefixes for possible forwarding */
             /* XXX if leaf - don't bother? Or do we want to remember them for
              * when we switch DODAG, as mentioned above?
              */
-
-            rpl_dodag_update_dio_prefix(dodag, prefix, prefix_len, flags, valid, preferred, false, true);
+            prefix_entry_t *prefix_entry = rpl_dodag_update_dio_prefix(dodag, prefix, prefix_len, flags, valid, preferred, false, true);
+            if (prefix_entry && pref_parent) {
+                rpl_control_process_prefix_option(prefix_entry, cur);
+                rpl_domain_t *domain = cur->rpl_domain;
+                if (domain && domain->prefix_cb) {
+                    uint8_t ll_address[16];
+                    memcpy(ll_address, rpl_neighbour_ll_address(pref_parent), 16);
+                    domain->prefix_cb(prefix_entry, domain->cb_handle, ll_address);
+                }
+            }
         }
 
         if ((flags & PIO_R) && !router_addr_set) {
@@ -713,7 +781,22 @@ static void rpl_control_process_prefix_options(protocol_interface_info_entry_t *
 
         start = ptr + 32;
     }
+    if (neighbour == pref_parent) {
+        rpl_dodag_update_unpublished_dio_prefix_finish(dodag);
+    }
 }
+
+void rpl_control_process_prefix_option(prefix_entry_t *prefix, protocol_interface_info_entry_t *cur)
+{
+    //Check is L Flag active
+    if (prefix->options & PIO_L) {
+        //define ONLink Route Information
+        //tr_debug("Register On Link Prefix to routing table");
+        ipv6_route_add(prefix->prefix, prefix->prefix_len, cur->id, NULL, ROUTE_RADV, prefix->lifetime, 0);
+    }
+
+}
+
 
 /*
  *   0                   1                   2                   3
@@ -752,7 +835,7 @@ static void rpl_control_process_route_options(rpl_instance_t *instance, rpl_doda
     }
 
     for (;;) {
-        const uint8_t *ptr = rpl_control_find_option(start, end-start, RPL_ROUTE_INFO_OPTION, 0);
+        const uint8_t *ptr = rpl_control_find_option(start, end - start, RPL_ROUTE_INFO_OPTION, 0);
         if (!ptr) {
             break;
         }
@@ -821,8 +904,7 @@ static void rpl_control_dao_trigger_request(rpl_instance_t *instance, rpl_dodag_
 static buffer_t *rpl_control_dio_handler(protocol_interface_info_entry_t *cur, rpl_domain_t *domain, buffer_t *buf)
 {
     if (!rpl_control_options_well_formed_in_buffer(buf, 24)) {
-        tr_error("DIO format");
-    malformed:
+malformed:
         protocol_stats_update(STATS_RPL_MALFORMED_MESSAGE, 1);
         return buffer_free(buf);
     }
@@ -839,7 +921,7 @@ static buffer_t *rpl_control_dio_handler(protocol_interface_info_entry_t *cur, r
     rank = common_read_16_bit(ptr + 2);
     g_mop_prf = ptr[4];
     dtsn = ptr[5];
-    dodagid = ptr+8;
+    dodagid = ptr + 8;
     ptr += 24;
     tr_info("DIO from %s, rank %x", trace_ipv6(buf->src_sa.address), rank);
     if (addr_is_ipv6_link_local(dodagid) || addr_is_ipv6_multicast(dodagid)) {
@@ -859,10 +941,6 @@ static buffer_t *rpl_control_dio_handler(protocol_interface_info_entry_t *cur, r
         instance = rpl_create_instance(domain, instance_id);
         if (!instance) {
             return buffer_free(buf);
-        }
-
-        if ((g_mop_prf & RPL_MODE_MASK) != RPL_MODE_NO_DOWNWARD) {
-            rpl_control_publish_own_addresses(domain, instance);
         }
     }
 
@@ -931,7 +1009,10 @@ static buffer_t *rpl_control_dio_handler(protocol_interface_info_entry_t *cur, r
     const rpl_dodag_conf_t *conf = rpl_dodag_get_config(dodag);
     if (!conf) {
         /* TODO - rate limit DIS? */
-        rpl_control_transmit_dis(domain, cur, RPL_SOLINFO_PRED_DODAGID|RPL_SOLINFO_PRED_INSTANCEID, instance_id, dodagid, 0, buf->src_sa.address);
+        if (domain->new_parent_add && !domain->new_parent_add(buf->src_sa.address, domain->cb_handle)) {
+            goto invalid_parent;
+        }
+        rpl_control_transmit_dis(domain, cur, RPL_SOLINFO_PRED_DODAGID | RPL_SOLINFO_PRED_INSTANCEID, instance_id, dodagid, 0, buf->src_sa.address);
         goto invalid_parent;
     }
 
@@ -963,9 +1044,15 @@ static buffer_t *rpl_control_dio_handler(protocol_interface_info_entry_t *cur, r
     /* Now we create the neighbour, if we don't already have a record */
     if (!neighbour) {
         neighbour = rpl_create_neighbour(version, buf->src_sa.address, cur->id, g_mop_prf, dtsn);
+        //Call Here new parent create
         if (!neighbour) {
             goto invalid_parent;
         }
+
+        if (domain->new_parent_add && !domain->new_parent_add(buf->src_sa.address, domain->cb_handle)) {
+            goto invalid_parent;
+        }
+
     }
 
     /* Update neighbour info */
@@ -978,7 +1065,7 @@ static buffer_t *rpl_control_dio_handler(protocol_interface_info_entry_t *cur, r
 
 
     rpl_control_process_prefix_options(cur, instance, dodag, neighbour, ptr, buffer_data_end(buf));
-    rpl_dodag_update_implicit_system_routes(dodag, neighbour);
+    //rpl_dodag_update_implicit_system_routes(dodag, neighbour);
     rpl_control_process_route_options(instance, dodag, version, neighbour, rank, ptr, buffer_data_end(buf));
 
     //rpl_control_process_metric_containers(neighbour, ptr, buffer_data_end(buf))
@@ -1004,7 +1091,7 @@ static buffer_t *rpl_control_dio_handler(protocol_interface_info_entry_t *cur, r
         rpl_instance_consistent_rx(instance);
     }
 
-    rpl_instance_neighbours_changed(instance);
+    rpl_instance_neighbours_changed(instance, dodag);
 
     return buffer_free(buf);
 
@@ -1104,7 +1191,7 @@ void rpl_control_transmit_dio(rpl_domain_t *domain, protocol_interface_info_entr
 
     ns_list_foreach(prefix_entry_t, prefix, prefixes) {
         /* We must not forward 'L' prefixes */
-        if ((prefix->options & (PIO_L|RPL_PIO_PUBLISHED)) == PIO_L) {
+        if ((prefix->options & (PIO_L | RPL_PIO_PUBLISHED)) == PIO_L) {
             continue;
         }
 
@@ -1120,9 +1207,9 @@ void rpl_control_transmit_dio(rpl_domain_t *domain, protocol_interface_info_entr
             prefix->options |= PIO_R;
             memcpy(prefix->prefix, addr, 16);
         } else {
-            prefix->options &=~ PIO_R;
+            prefix->options &= ~ PIO_R;
 
-            if (rpl_dodag_mop(dodag) == RPL_MODE_NON_STORING) {
+            if (rpl_dodag_mop(dodag) == RPL_MODE_NON_STORING && (prefix->lifetime != 0 || !(prefix->options & PIO_A))) {
                 continue;
             }
         }
@@ -1159,20 +1246,28 @@ void rpl_control_transmit_dio(rpl_domain_t *domain, protocol_interface_info_entr
 
     ns_list_foreach_safe(prefix_entry_t, prefix, prefixes) {
         /* See equivalent checks in length calculation above */
-        if ((prefix->options & (PIO_L|RPL_PIO_PUBLISHED)) == PIO_L ||
-            (!(prefix->options & PIO_R) && rpl_dodag_mop(dodag) == RPL_MODE_NON_STORING)) {
+        if ((prefix->options & (PIO_L | RPL_PIO_PUBLISHED)) == PIO_L ||
+                (!(prefix->options & PIO_R) && rpl_dodag_mop(dodag) == RPL_MODE_NON_STORING && (prefix->lifetime != 0 || !(prefix->options & PIO_A)))) {
             continue;
         }
 
         ptr[0] = RPL_PREFIX_INFO_OPTION;
         ptr[1] = 30;
         ptr[2] = prefix->prefix_len;
-        ptr[3] = prefix->options & (PIO_R|PIO_A|PIO_L);
+        ptr[3] = prefix->options & (PIO_R | PIO_A | PIO_L);
         common_write_32_bit(prefix->lifetime, ptr + 4);
         common_write_32_bit(prefix->preftime, ptr + 8);
         common_write_32_bit(0, ptr + 12); // reserved
         memcpy(ptr + 16, prefix->prefix, 16);
         ptr += 32;
+        /* Transmitting a multicast DIO decrements the hold count for 0 lifetime prefixes */
+        if (dst == NULL && (prefix->options & RPL_PIO_AGE)) {
+            int hold_count = prefix->options & RPL_PIO_HOLD_MASK;
+            if (hold_count) {
+                hold_count--;
+                prefix->options = (prefix->options & ~RPL_PIO_HOLD_MASK) | hold_count;
+            }
+        }
     }
 
     ns_list_foreach_safe(rpl_dio_route_t, route, routes) {
@@ -1229,7 +1324,6 @@ void rpl_control_transmit_dio(rpl_domain_t *domain, protocol_interface_info_entr
 static buffer_t *rpl_control_dis_handler(protocol_interface_info_entry_t *cur, rpl_domain_t *domain, buffer_t *buf, bool multicast)
 {
     if (!rpl_control_options_well_formed_in_buffer(buf, 2)) {
-        tr_error("DIS format");
         protocol_stats_update(STATS_RPL_MALFORMED_MESSAGE, 1);
         return buffer_free(buf);
     }
@@ -1306,6 +1400,7 @@ void rpl_control_transmit_dis(rpl_domain_t *domain, protocol_interface_info_entr
 
     buffer_data_end_set(buf, ptr);
     rpl_control_transmit(domain, cur, ICMPV6_CODE_RPL_DIS, buf, dst);
+    tr_info("Transmit DIS");
 }
 
 #ifdef HAVE_RPL_DAO_HANDLING
@@ -1356,8 +1451,7 @@ static buffer_t *rpl_control_dao_ack_handler(protocol_interface_info_entry_t *cu
     (void)cur;
 
     if (buffer_data_length(buf) < 4) {
-    format_error:
-        tr_error("DAO-ACK format");
+format_error:
         protocol_stats_update(STATS_RPL_MALFORMED_MESSAGE, 1);
         return buffer_free(buf);
     }
@@ -1440,8 +1534,7 @@ bool rpl_control_transmit_dao(rpl_domain_t *domain, protocol_interface_info_entr
 static buffer_t *rpl_control_dao_handler(protocol_interface_info_entry_t *cur, rpl_domain_t *domain, buffer_t *buf, bool multicast)
 {
     if (buffer_data_length(buf) < 4) {
-    format_error:
-        tr_error("DAO format");
+format_error:
         protocol_stats_update(STATS_RPL_MALFORMED_MESSAGE, 1);
         return buffer_free(buf);
     }
@@ -1482,20 +1575,21 @@ static buffer_t *rpl_control_dao_handler(protocol_interface_info_entry_t *cur, r
     uint8_t mode = rpl_dodag_mop(dodag);
     switch (mo)!rpl_instance_am_root(instance))
 
-    /* No current processing - pretend to accept */
-    uint8_t status = 0;
+        /* No current processing - pretend to accept */
+        uint8_t status = 0;
 
 
     }
 #endif
-    uint8_t status;
-    bool reply_ok = rpl_instance_dao_received(instance, buf->src_sa.address, buf->interface->id, multicast, ptr, opts_len, &status);
+uint8_t status;
+bool reply_ok = rpl_instance_dao_received(instance, buf->src_sa.address, buf->interface->id, multicast, ptr, opts_len, &status);
 
-    /* Ack if requested or non-zero status */
-    if (reply_ok && ((flags & RPL_DAO_FLAG_ACK_REQ) || status != 0)) {
-        rpl_control_transmit_dao_ack(domain, cur, instance_id, dao_sequence, status, dodagid, buf->src_sa.address);
-    }
-    return buffer_free(buf);
+/* Ack if requested or non-zero status */
+if (reply_ok && ((flags &RPL_DAO_FLAG_ACK_REQ) || status != 0))
+{
+    rpl_control_transmit_dao_ack(domain, cur, instance_id, dao_sequence, status, dodagid, buf->src_sa.address);
+}
+return buffer_free(buf);
 }
 #endif // HAVE_RPL_DAO_HANDLING
 
@@ -1581,6 +1675,7 @@ void rpl_control_slow_timer(uint16_t seconds)
 
     ns_list_foreach(rpl_domain_t, domain, &rpl_domains) {
         ns_list_foreach_safe(rpl_instance_t, instance, &domain->instances) {
+            rpl_control_publish_own_addresses(domain, instance);
             rpl_instance_slow_timer(instance, seconds);
             rpl_downward_dao_slow_timer(instance, seconds);
             /* We purge one item from each instance, so as not to favour one domain or instance */
@@ -1619,13 +1714,14 @@ rpl_instance_t *rpl_control_lookup_instance(rpl_domain_t *domain, uint8_t instan
     return rpl_lookup_instance(domain, instance_id, dodagid);
 }
 
-bool rpl_control_get_instance_dao_target_count(rpl_domain_t *domain, uint8_t instance_id, const uint8_t *dodagid, uint16_t *target_count)
+bool rpl_control_get_instance_dao_target_count(rpl_domain_t *domain, uint8_t instance_id, const uint8_t *dodagid, const uint8_t *prefix, uint16_t *target_count)
 {
     rpl_instance_t *instance = rpl_lookup_instance(domain, instance_id, dodagid);
     if (!instance) {
         return false;
     }
-    *target_count = rpl_upward_read_dao_target_list_size(instance);
+
+    *target_count = rpl_upward_read_dao_target_list_size(instance, prefix);
     return true;
 }
 

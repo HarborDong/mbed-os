@@ -30,6 +30,7 @@ import json
 from collections import OrderedDict
 import logging
 from intelhex import IntelHex
+import io
 
 try:
     unicode
@@ -103,7 +104,8 @@ def run_cmd(command, work_dir=None, chroot=None, redirect=False):
 
     try:
         process = Popen(command, stdout=PIPE,
-                        stderr=STDOUT if redirect else PIPE, cwd=work_dir)
+                        stderr=STDOUT if redirect else PIPE, cwd=work_dir,
+                        universal_newlines=True)
         _stdout, _stderr = process.communicate()
     except OSError:
         print("[OS ERROR] Command: "+(' '.join(command)))
@@ -214,6 +216,23 @@ def copy_file(src, dst):
     copyfile(src, dst)
 
 
+def copy_when_different(src, dst):
+    """ Only copy the file when it's different from its destination.
+
+    Positional arguments:
+    src - the source of the copy operation
+    dst - the destination of the copy operation
+    """
+    if isdir(dst):
+        _, base = split(src)
+        dst = join(dst, base)
+    if exists(dst):
+        with open(src, 'rb') as srcfd, open(dst, 'rb') as dstfd:
+            if srcfd.read() == dstfd.read():
+                return
+    copyfile(src, dst)
+
+
 def delete_dir_files(directory):
     """ A function that does rm -rf
 
@@ -277,6 +296,11 @@ class NotSupportedException(Exception):
 class InvalidReleaseTargetException(Exception):
     pass
 
+class NoValidToolchainException(Exception):
+    """A class representing no valid toolchain configurations found on
+    the system"""
+    pass
+
 def split_path(path):
     """spilt a file name into it's directory name, base name, and extension
 
@@ -315,8 +339,7 @@ def args_error(parser, message):
     parser - the ArgumentParser object that parsed the command line
     message - what went wrong
     """
-    parser.error(message)
-    sys.exit(2)
+    parser.exit(status=2, message=message+'\n')
 
 
 def construct_enum(**enums):
@@ -358,6 +381,24 @@ def check_required_modules(required_modules, verbose=True):
     else:
         return True
 
+
+def _ordered_dict_collapse_dups(pair_list):
+    to_ret = OrderedDict()
+    for key, value in pair_list:
+        if key in to_ret:
+            if isinstance(to_ret[key], dict):
+                to_ret[key].update(value)
+            elif isinstance(to_ret[key], list):
+                to_ret[key].extend(value)
+            else:
+                raise ValueError(
+                    "Key %s found twice and is not mergeable" % key
+                )
+        else:
+            to_ret[key] = value
+    return to_ret
+
+
 def json_file_to_dict(fname):
     """ Read a JSON file and return its Python representation, transforming all
     the strings from Unicode to ASCII. The order of keys in the JSON file is
@@ -367,11 +408,13 @@ def json_file_to_dict(fname):
     fname - the name of the file to parse
     """
     try:
-        with open(fname, "r") as file_obj:
-            return json.loads(file_obj.read().encode('ascii', 'ignore'),
-                              object_pairs_hook=OrderedDict)
-    except (ValueError, IOError):
-        sys.stderr.write("Error parsing '%s':\n" % fname)
+        with io.open(fname, encoding='ascii',
+                     errors='ignore') as file_obj:
+            return json.load(
+                file_obj,  object_pairs_hook=_ordered_dict_collapse_dups
+            )
+    except (ValueError, IOError) as e:
+        sys.stderr.write("Error parsing '%s': %s\n" % (fname, e))
         raise
 
 # Wowza, double closure
@@ -456,10 +499,12 @@ def argparse_profile_filestring_type(string):
     absolute path or a file name (expanded to
     mbed-os/tools/profiles/<fname>.json) of a existing file"""
     fpath = join(dirname(__file__), "profiles/{}.json".format(string))
-    if exists(string):
-        return string
-    elif exists(fpath):
+
+    # default profiles are searched first, local ones next.
+    if exists(fpath):
         return fpath
+    elif exists(string):
+        return string
     else:
         raise argparse.ArgumentTypeError(
             "{0} does not exist in the filesystem.".format(string))
@@ -544,10 +589,28 @@ def intelhex_offset(filename, offset):
                             % filename)
     return ih
 
-
 def integer(maybe_string, base):
     """Make an integer of a number or a string"""
     if isinstance(maybe_string, int):
         return maybe_string
     else:
         return int(maybe_string, base)
+
+def generate_update_filename(name, target):
+    return "%s_update.%s" % (
+                    name,
+                    getattr(target, "OUTPUT_EXT_UPDATE", "bin")
+                )
+
+def print_end_warnings(end_warnings):
+    """ Print a formatted list of warnings
+
+    Positional arguments:
+    end_warnings - A list of warnings (strings) to print
+    """
+    if end_warnings:
+        warning_separator = "-" * 60
+        print(warning_separator)
+        for end_warning in end_warnings:
+            print(end_warning)
+        print(warning_separator)

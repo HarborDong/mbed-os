@@ -44,6 +44,7 @@ extern "C" {
 #endif
 
 #ifdef LWIP_PROVIDE_ERRNO
+#if LWIP_PROVIDE_ERRNO == 1
 
 #define  EPERM            1  /* Operation not permitted */
 #define  ENOENT           2  /* No such file or directory */
@@ -177,12 +178,18 @@ extern "C" {
 extern int errno;
 #endif
 
+#endif //LWIP_PROVIDE_ERRNO == 1
 #else /* LWIP_PROVIDE_ERRNO */
 
-/* Define LWIP_ERRNO_INCLUDE to <errno.h> to include the error defines here */
+/* Define LWIP_ERRNO_STDINCLUDE if you want to include <errno.h> here */
+#ifdef LWIP_ERRNO_STDINCLUDE
+#include <errno.h>
+#else /* LWIP_ERRNO_STDINCLUDE */
+/* Define LWIP_ERRNO_INCLUDE to an equivalent of <errno.h> to include the error defines here */
 #ifdef LWIP_ERRNO_INCLUDE
 #include LWIP_ERRNO_INCLUDE
 #endif /* LWIP_ERRNO_INCLUDE */
+#endif /* LWIP_ERRNO_STDINCLUDE */
 
 #endif /* LWIP_PROVIDE_ERRNO */
 

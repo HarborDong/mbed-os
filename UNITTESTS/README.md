@@ -1,294 +1,306 @@
-# Unit testing Mbed OS
+## Unit testing
 
-This document describes how to run and write unit tests for Mbed OS.
+This document describes how to write and use unit tests for Arm Mbed OS. 
 
-## Prerequisites
+### Introduction
 
-* GNU toolchains installed.
-    * GCC 6 or later
-    * MinGW-W64 GCC-6.4.0 or MinGW-W64 GCC-7.3.0 (Windows)
-* CMake 3.0+ installed.
-* Python 2.7.x or >3.5 and pip 10.0 (or newer) installed.
-* gcovr >=4.1
+Unit tests test code in small sections on a host machine. Unlike other testing tools, unit testing doesn't require embedded hardware or need to build a full operating system. Because of this, unit testing can result in faster tests than other tools. Unit testing happens in a build environment where you test each C or C++ class or module in isolation. Build test suites into separate test binaries and stub all access outside to remove dependencies on any specific embedded hardware or software combination. This allows you to complete tests using native compilers on the build machine.
 
-### Installing dependencies on Debian/Ubuntu
+### Prerequisites
+
+Please install the following dependencies to use Mbed OS unit testing:
+
+* GNU toolchains.
+   * GCC 6 or later. We recommend you use MinGW-W64 on Windows, but any Windows port of the above GCC versions works. Default compilers can be used on Mac OS instead of GCC to shorten build times, but code coverage results can differ.
+* CMake 3.0 or newer.
+* Python 2.7.x, 3.5 or newer.
+* Pip 10.0 or newer.
+* Gcovr 4.1 or newer.
+* Arm Mbed CLI 1.8.0 or newer.
+
+Detailed instructions for supported operating systems are below.
+
+#### Installing dependencies on Debian or Ubuntu
+
+In a terminal window:
 
 1. `sudo apt-get -y install build-essential cmake`
-2. Install python and pip:
-```
-sudo apt-get -y install python python-setuptools
-sudo easy_install pip
-```
-3. Install [gcovr](#installing-covr).
-4. (Optional) Install [Mbed CLI](https://os.mbed.com/docs/latest/tools/arm-mbed-cli.html).
+1. Install Python and Pip with:
 
-### Installing dependencies on Mac OS
+   ```
+   sudo apt-get -y install python python-setuptools
+   sudo easy_install pip
+   ```
+
+1. Install Gcovr and [Mbed CLI](https://os.mbed.com/docs/mbed-os/latest/tools/developing-mbed-cli.html) with `pip install "gcovr>=4.1" mbed-cli`.
+
+#### Installing dependencies on macOS
+
+In a terminal window:
 
 1. Install [Homebrew](https://brew.sh/).
-2. Install gcc compilers and cmake with: `brew install gcc cmake`
-3. Install python and pip:
-```
-brew install python
-sudo easy_install pip
-```
-3. Install [gcovr](#installing-covr).
-4. (Optional) Install [Mbed CLI](https://os.mbed.com/docs/latest/tools/arm-mbed-cli.html).
+1. Install Xcode Command Line Tools with `xcode-select --install`.
+1. Install CMake with: `brew install cmake`.
+1. Install Python and Pip:
 
-### Installing dependencies on Windows
+   ```
+   brew install python
+   sudo easy_install pip
+   ```
 
-1. Download and install [MinGW-W64](http://mingw-w64.org/).
-2. Download CMake binaries from https://cmake.org/download/ and run the installer.
-3. Download Python2.7 or Python3 from https://www.python.org/getit/ and run the installer.
-4. Add MinGW, CMake and Python into PATH.
-5. Install [gcovr](#installing-covr).
-6. (Optional) Install [Mbed CLI](https://os.mbed.com/docs/latest/tools/arm-mbed-cli.html).
+1. Install Gcovr and [Mbed CLI](https://os.mbed.com/docs/mbed-os/latest/tools/developing-mbed-cli.html) with `pip install "gcovr>=4.1" mbed-cli`.
+1. (Optional) Install GCC with `brew install gcc`.
 
-### Installing covr
+#### Installing dependencies on Windows
 
-Install gcovr code coverage tool globally with `pip install 'gcovr>=4.1'` or using virtualenv:
+In a terminal window:
 
-#### virtualenv
+1. Download and install MinGW-W64 from [SourceForge](https://sourceforge.net/projects/mingw-w64/files/Toolchains%20targetting%20Win64/Personal%20Builds/mingw-builds/).
+1. Download CMake binaries from https://cmake.org/download/, and run the installer.
+1. Download Python 2.7 or Python 3 from https://www.python.org/getit/, and run the installer.
+1. Add MinGW, CMake and Python into system PATH.
+1. Install Gcovr and [Mbed CLI](https://os.mbed.com/docs/mbed-os/latest/tools/developing-mbed-cli.html) with `pip install "gcovr>=4.1" mbed-cli`.
 
-1. Install virtualenv if not installed with `pip install virtualenv`
-2. Install gcovr with:
+### Test code structure
 
-**[Debian/Linux/Mac OS]**
-```
-virtualenv pyenv
-. pyenv/bin/activate
-pip install 'gcovr>=4.1'
-```
-**[Windows]**
-```
-virtualenv pyenv
-pyenv\\Scripts\\activate
-pip install "gcovr>=4.1"
-```
+Find unit tests in the Mbed OS repository under the `UNITTESTS` folder. We recommend unit test files use an identical directory path as the file under test. This makes it easier to find unit tests for a particular class or a module. For example, if the file you're testing is `some/example/path/ClassName.cpp`, then all the test files are in the `UNITTESTS/some/example/path/ClassName` directory. Each test suite needs to have its own `unittest.cmake` file for test configuration.
 
-## Building and running unit tests
+All the class stubs should be located in the `UNITTESTS/stubs` directory. A single stub class can be used by multiple test suites and should follow the naming convention `ClassName_stub.cpp` for the source file, and `ClassName_stub.h` for the header file. Use the actual header files for the unit tests, and don't stub headers if possible. The stubbed headers reside in the `UNITTESTS/target_h` directory.
 
-> In case of running into problems see [troubleshooting](#troubleshooting) section.
+#### Test discovery
 
-`UNITTESTS/mbed_unittest.py` contains testing scripts for Mbed OS unit testing. Mbed CLI supports unit testing through `mbed test --unittests` command with the same arguments.
+Registering unit tests to run happens automatically, and the test runner handles registration. However, test files do not automatically  build. Build unit tests with a separate system that searches for unit tests under the `UNITTESTS` directory.
 
-### Testing with Mbed CLI
+For the build system to find and build any test suite automatically, include a unit test configuration file named `unittest.cmake` for each unit test suite. This configuration file lists all the source files required for the test build.
 
-```
-mbed test --unittests
-```
+#### Test names
 
-A subset of tests can be run by providing `-r` flag for the tool which runs tests matching a regular expression.
+The build system automatically generates names of test suites. The name is constructed by taking a relative file path from the UNITTESTS directory to the test directory and replacing path separators with dashes. For example, the test suite name for `some/example/path/ClassName.cpp` is `some-example-path-ClassName`. Suite names are used when deciding which test suites to run.
 
-e.g. `mbed test --unittests --run -r features_netsocket`
+### Unit testing with Mbed CLI
 
-### Build manually without Python tools
+Mbed CLI supports unit tests through the `mbed test --unittests` command. For information on using Mbed CLI, please see the [CLI documentation](https://os.mbed.com/docs/mbed-os/latest/tools/developing-mbed-cli.html).
 
-1. Create a build directory e.g. `mkdir UNITTESTS/build`.
-2. Move to the build directory `cd UNITTESTS/build`.
-3. Run CMake with `cmake [RELATIVE PATH TO UNITTESTS DIR] [OPTIONAL ARGUMENTS]` e.g. `cmake ..`:
-	* Add `-g [generator]` argument if target other than Unix Makefiles e.g. MinGW `-g "MinGW Makefiles"`
-4. Run make program (make, gmake, mingw32-make, etc).
+### Writing unit tests
 
-##### Run CMake and build Unix Makefiles (GNU make)
+A unit tests suite consists of one or more test cases. The test cases should cover all the functions in a class under test. All the external dependencies are stubbed including the other classes in the same module. Avoid stubbing header files. Finally, analyze code coverage to ensure all code is tested, and no dead code is found.
 
-```
-cmake ..
-make
-```
+Unit tests are written using [Google Test v1.8.1](https://github.com/google/googletest/releases/tag/release-1.8.1).
 
-##### Run CMake and build MinGW Makefiles (mingw32-make)
+Please see the [documentation for Google Test](https://github.com/google/googletest/blob/master/googletest/docs/primer.md) to learn how to write unit tests using its framework. See the [documentation for Google Mock](https://github.com/google/googletest/blob/master/googlemock/docs/Documentation.md) if you want to write and use C++ mock classes instead of stubs.
 
-```
-cmake -G "MinGW Makefiles" ..
-mingw32-make
-```
+#### Test suite configuration
 
-#### Custom CMake variables
+Create two files in the test directory for each test suite:
 
-Usage: 
-`cmake [RELATIVE PATH TO UNITTESTS DIR] [OPTIONS]`
+* Unit test source file (`test_ClassName.cpp`).
+* Unit test configuration file (`unittest.cmake`).
 
-Keyword variables (usage `cmake -D<VARIABLE>(:<TYPE>)=<value>`:
+List all the required files for the build in the `unittest.cmake` file with paths relative to the `UNITTESTS` folder. Use the following variables to list the source files and include paths:
 
-| Variable | Type | Accepted values | Description |
-| -------- | ---- | --------------- | ----------- |
-| COVERAGE | STRING | merged<br>separate | Generate merged or individual reports |
+* **unittest-includes**: List of header include paths. You can use this to extend or overwrite default paths listed in `UNITTESTS/CMakeLists.txt`.
+* **unittest-sources**: List of files under test.
+* **unittest-test-sources**: List of test sources and stubs.
 
-### Run in terminal
+You can also set custom compiler flags and other configurations supported by CMake in `unittest.cmake`.
 
-Unit tests can be run separately from each executable or by using ctest test runner. Run ctest with make program using target test. Options can be passed to ctest using ARGS argument. See [ctest manual](https://cmake.org/cmake/help/v3.0/manual/ctest.1.html) for more information.
+#### Example
 
-Run ctest on test suite level:
-```
-{MAKE_PROGRAM} test -C [RELATIVE PATH TO BUILD DIRECTORY]
-```
-e.g. `make test -C UNITTESTS/build` or `mingw32-make test -C UNITTESTS/build`
+With the following steps, you can write a simple unit test. This example creates dummy classes to be tested, creates and configures unit tests for a class and stubs all external dependencies.
 
-Run ctest verbose (show each test case):
-```
-{MAKE_PROGRAM} test -C UNITTESTS/build ARGS="-V"
-```
+1. Create the following dummy classes in `mbed-os/example`:
 
-Run ctest dashboard test and create test results:
-```
-{MAKE_PROGRAM} test --C UNITTESTS/build ARGS="-D ExperimentalTest"
-```
+    **MyClass.h**
 
-### Run with GUI test runner
+    ```
+    #ifndef MYCLASS_H_
+    #define MYCLASS_H_
 
-1. Build and/or install *gtest-runner* using the documentation: https://github.com/nholthaus/gtest-runner
+    namespace example {
 
-2. Run the application, add built test executables into the list and run it.
+    class MyClass {
+    public:
+        int myFunction();
+    };
+
+    }
+
+    #endif
+    ```
+
+    **MyClass.cpp**
+
+    ```
+    #include "MyClass.h"
+    #include "OtherClass.h"
+
+    namespace example {
+
+    int MyClass::myFunction() {
+        OtherClass o = OtherClass();
+        return o.otherFunction();
+    }
+
+    }
+    ```
+
+    **OtherClass.h**
+
+    ```
+    #ifndef OTHERCLASS_H_
+    #define OTHERCLASS_H_
+
+    namespace example {
+
+    class OtherClass {
+    public:
+        int otherFunction();
+    };
+
+    }
+
+    #endif
+    ```
+
+    **OtherClass.cpp**
+
+    ```
+    #include "OtherClass.h"
+
+    namespace example {
+
+    int OtherClass::otherFunction() {
+        return 1;
+    }
+
+    }
+    ```
+
+1. Create a directory for MyClass unit tests in `UNITTESTS/example/MyClass`.
+1. Create a configuration file and a source file for MyClass unit tests in `UNITTESTS/example/MyClass`:
+
+    **unittest.cmake**
+
+    ```
+    # Add here additional test specific include paths
+    set(unittest-includes ${unittest-includes}
+        ../example
+    )
+
+    # Add here classes under test
+    set(unittest-sources
+        ../example/MyClass.cpp
+    )
+
+    # Add here test classes and stubs
+    set(unittest-test-sources
+        example/MyClass/test_MyClass.cpp
+        stubs/OtherClass_stub.cpp
+    )
+    ```
+
+    **test_MyClass.cpp**
+
+    ```
+    #include "gtest/gtest.h"
+    #include "example/MyClass.h"
+
+    class TestMyClass : public testing::Test {
+    protected:
+        example::MyClass *obj;
+
+        virtual void SetUp()
+        {
+            obj = new example::MyClass();
+        }
+
+        virtual void TearDown()
+        {
+            delete obj;
+        }
+    };
+
+    TEST_F(TestMyClass, constructor)
+    {
+        EXPECT_TRUE(obj);
+    }
+
+    TEST_F(TestMyClass, myfunction)
+    {
+        EXPECT_EQ(obj->myFunction(), 0);
+    }
+    ```
+
+1. Stub all external dependencies. Create the following stub in `UNITTESTS/stubs`:
+
+    **OtherClass_stub.cpp**
+
+    ```
+    #include "example/OtherClass.h"
+
+    namespace example {
+
+    int OtherClass::otherFunction() {
+        return 0;
+    }
+
+    }
+    ```
+
+This example does not use any Mbed OS code, but if your unit tests do, then remember to update header stubs in `UNITTESTS/target_h` and source stubs in `UNITTESTS/stubs` with any missing type or function declarations. 
+
+### Building and running unit tests
+
+Use Mbed CLI to build and run unit tests. For advanced use, you can run CMake and a Make program directly.
+
+#### Build tests directly with CMake
+
+1. Create a build directory `mkdir UNITTESTS/build`.
+1. Move to the build directory `cd UNITTESTS/build`.
+1. Run CMake using a relative path to `UNITTESTS` folder as the argument. So from `UNITTESTS/build` use `cmake ..`:
+   * Add `-g [generator]` if generating other than Unix Makefiles such in case of MinGW use `-g "MinGW Makefiles"`.
+   * Add `-DCMAKE_MAKE_PROGRAM=<value>`, `-DCMAKE_CXX_COMPILER=<value>` and `-DCMAKE_C_COMPILER=<value>` to use a specific Make program and compilers.
+   * Add `-DCMAKE_BUILD_TYPE=Debug` for a debug build.
+   * Add `-DCOVERAGE=True` to add coverage compiler flags.
+   * Add `-Dgtest_disable_pthreads=ON` to run in a single thread.
+   * See the [CMake manual](https://cmake.org/cmake/help/v3.0/manual/cmake.1.html) for more information.
+1. Run a Make program to build tests.
+
+#### Run tests directly with CTest
+
+Run a test binary in the build directory to run a unit test suite. To run multiple test suites at once, use the CTest test runner. Run CTest with `ctest`. Add `-v` to get results for each test case. See the [CTest manual](https://cmake.org/cmake/help/v3.0/manual/ctest.1.html) for more information.
+
+#### Run tests with GUI test runner
+
+1. Install `gtest-runner` according to the [documentation](https://github.com/nholthaus/gtest-runner).
+1. Run `gtest-runner`.
+1. Add test executables into the list and run.
+
+### Debugging
+
+1. Use Mbed CLI to build a debug build. For advanced use, run CMake directly with `-DCMAKE_BUILD_TYPE=Debug`, and then run a Make program.
+1. Run GDB with a test executable as an argument to debug unit tests.
+1. Run tests with Valgrind to analyze the test memory profile.
 
 ### Get code coverage
 
-Python tools use gcovr to build code coverage reports. Generate html report `UNITTESTS/build/coverage/index.html` with:
-```
-mbed test --unittests --coverage html
-```
+Use Mbed CLI to generate code coverage reports. For advanced use, follow these steps:
 
-To get coverage for a single test suite, run gcovr separately for suite coverage data directory. See [gcovr documentation](https://gcovr.com/guide.html#filter-options) for more information.
+1. Run CMake with both `-DCMAKE_BUILD_TYPE=Debug` and `-DCOVERAGE=True`.
+1. Run a Make program to build the tests.
+1. Run the tests.
+1. Run Gcovr or any other code coverage tool directly in the build directory.
 
-e.g. for features/netsocket/InternetSocket coverage:
+### Troubleshooting
 
-Debian/Ubuntu/Mac OS:
-```
-mkdir UNITTESTS/build
-cd UNITTESTS/build
-cmake -DCMAKE_BUILD_TYPE=Debug -DCOVERAGE:STRING=html  ..
-make
-./features_netsocket_InternetSocket
-gcovr -r ../.. --html --html-detail -o ./index.html ./CMakeFiles/features_netsocket_InternetSocket.MbedOS.dir/
-```
-Windows:
-```
-mkdir UNITTESTS/build
-cd UNITTESTS/build
-cmake -DCMAKE_BUILD_TYPE=Debug -DCOVERAGE:STRING=html -g "MinGW Makefiles" ..
-mingw32-make
-features_netsocket_InternetSocket.exe
-gcovr -r ..\.. --html --html-detail -o .\index.html .\CMakeFiles\features_netsocket_InternetSocket.MbedOS.dir\
-```
+**Problem:** Generic problems with CMake or with the build process.
+* **Solution**: Delete the build directory. Make sure that CMake, g++, GCC and a Make program can be found in the path and are correct versions.
 
-## The structure of unit tests
+**Problem:** (Windows) Virus protection identifies files generated by CMake as malicious and quarantines the files.
+* **Solution**: Restore false-positive files from the quarantine.
 
-The structure of the unit tests directory looks like this:
-```
-UNITTESTS
-  ├── mbed_unittest.py                       Python tool for unit testing
-  ├── unit_test                              Python tool modules
-  ├── CMakeLists.txt                         CMake project definition file
-  ├── CMakeSettings.json                     CMake configurations for Visual Studio 2017
-  ├── README.md
-  ├── googletest-CMakeLists.txt.in           CMake project definition file for Google Test
-  │
-  ├── features
-  │   └── netsocket                          Directory tree that mirrors Mbed OS root
-  │       ├── NetworkInterface               Name of the class to be tested
-  │       │   ├── test_NetworkInterface.cpp
-  │       │   └── unittest.cmake             CMake module for unit test
-  │       └── Socket
-  │
-  ├── stubs                                  Shared stubs which can be used for tests.
-  ├── target_h                               Shared headers which can be used for tests.
-  └── template                               Templates for creating new unittests
-```
-Each unit test has an identical directory tree as seen in the Mbed OS root folder. This is not a mandatory requirement but helps to maintain tests. Each class to be tested have their own `unittest.cmake` which is found by `CMakeLists.txt`.
+**Problem:** (Windows) Git with shell installation adds sh.exe to the path and then CMake throws an error: sh.exe was found in your PATH. For MinGW make to work correctly, sh.exe must NOT be in your path.
+* **Solution**:  Remove sh.exe from the system path.
 
-## Creating a unit test
-
-Each class to be tested requires two files for unit testing:
-1. C++ unit test source file (e.g. `test_NetworkInterface.cpp`)
-2. CMake module file for unit test definition (`unittest.cmake`)
-
-A unit test definition file `unittest.cmake` requires variables to be set for a test to be configured. File source paths in `unittest.cmake` files need to be relative to the unit test folder and `CMakeLists.txt`.
-
-* **TEST_SUITE_NAME** - Identifier for the test suite. Use naming convention *PATH_TO_THE_TESTABLE_FILE* e.g. *features_netsocket_InternetSocket*
-* **unittest-includes** - Include paths for headers needed to build the tests in addition to the base include paths listed in [CMakeLists.txt](CMakeLists.txt). Optional.
-* **unittest-sources** - Mbed OS source files and stubs included for the build.
-* **unittest-test-sources** - Unit test source files.
-
-#### Creating unit tests files with Mbed CLI
-
-```
-mbed test --unittests --new <FILEPATH>
-```
-
-E.g. `mbed test --unittests --new rtos/Semaphore.cpp`
-
-The generator script only creates the files required for a unit test. It does not write unit tests automatically nor does it handle source dependencies.
-
-#### Create files manually
-
-For example to create a unit test for `rtos/Semaphore.cpp`:
-
-1. Create a directory for unit test files in `UNITTESTS/rtos/Semaphore`.
-2. Create a test definition file `UNITTESTS/rtos/Semaphore/unittest.cmake` with the following content:
-```
-set(TEST_SUITE_NAME "rtos_Semaphore")
-
-set(unittest-sources
-	stubs/mbed_assert.c
-	../rtos/Semaphore.cpp
-)
-
-set(unittest-test-sources
-	rtos/Semaphore/test_Semaphore.cpp
-)
-```
-3. Create a test source file `UNITTESTS/rtos/Semaphore/test_Semaphore.cpp` with the following content:
-```
-#include  "gtest/gtest.h"
-#include  "rtos/Semaphore.h"
-
-static osStatus_t retval = osOK;
-static uint32_t count = 0;
-
-// Test stubs
-osStatus_t osSemaphoreAcquire(osSemaphoreId_t semaphore_id, uint32_t timeout)
-{
-    return retval;
-}
-osStatus_t osSemaphoreDelete(osSemaphoreId_t semaphore_id)
-{
-    return retval;
-}
-osStatus_t osSemaphoreRelease(osSemaphoreId_t semaphore_id)
-{
-    return retval;
-}
-uint32_t osSemaphoreGetCount(osSemaphoreId_t semaphore_id)
-{
-    return count;
-}
-osSemaphoreId_t osSemaphoreNew(uint32_t max_count, uint32_t initial_count, const osSemaphoreAttr_t *attr)
-{
-    return (void *)&count; // Just a dymmy reference
-}
-
-class  TestSemaphore : public  testing::Test {
-protected:
-    rtos::Semaphore *sem;
-
-    virtual  void  SetUp()
-    {
-        sem = new rtos::Semaphore();
-    }
-
-    virtual  void  TearDown()
-    {
-        delete sem;
-    }
-};
-
-TEST_F(TestSemaphore, constructor)
-{
-    EXPECT_TRUE(sem);
-}
-```
-
-## Troubleshooting
-
-**Problem:** virus protection identifies files generated by CMake as malicious and quarantines the files on Windows.
-
-* **Solution**: restore the false positive files from the quarantine.
+**Problem:** (Mac OS) CMake compiler check fails on Mac OS Mojave when using GCC-8.
+* **Solution**: Make sure gnm (binutils) is not installed. Uninstall binutils with `brew uninstall binutils`.

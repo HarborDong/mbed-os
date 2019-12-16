@@ -13,6 +13,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+#if !defined(MBED_CONF_RTOS_PRESENT)
+#error [NOT_SUPPORTED] Low power timer test cases require a RTOS to run.
+#else
+
 #include "mbed.h"
 #include "greentea-client/test_env.h"
 #include "unity.h"
@@ -21,10 +26,11 @@
 #include "lp_ticker_api_tests.h"
 #include "hal/lp_ticker_api.h"
 #include "hal/mbed_lp_ticker_wrapper.h"
+#include "hal/us_ticker_api.h"
 
 #if !DEVICE_LPTICKER
 #error [NOT_SUPPORTED] Low power timer not supported for this target
-#endif
+#else
 
 using namespace utest::v1;
 
@@ -85,7 +91,7 @@ void overflow_protect()
         return;
     }
 
-    while (lp_ticker_read() > ticks_now);
+    while (lp_ticker_read() >= ticks_now);
 }
 
 void ticker_event_handler_stub(const ticker_data_t *const ticker)
@@ -204,3 +210,6 @@ int main()
 {
     return !Harness::run(specification);
 }
+
+#endif // !DEVICE_LPTICKER
+#endif // !defined(MBED_CONF_RTOS_PRESENT)

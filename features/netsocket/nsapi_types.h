@@ -55,6 +55,7 @@ enum nsapi_error {
     NSAPI_ERROR_CONNECTION_TIMEOUT  = -3017,     /*!< connection timed out */
     NSAPI_ERROR_ADDRESS_IN_USE      = -3018,     /*!< Address already in use */
     NSAPI_ERROR_TIMEOUT             = -3019,     /*!< operation timed out */
+    NSAPI_ERROR_BUSY                = -3020,     /*!< device is busy and cannot accept new operation */
 };
 
 
@@ -97,7 +98,7 @@ typedef signed int nsapi_error_t;
  */
 typedef unsigned int nsapi_size_t;
 
-/** Type used to represent either a size or error pased through sockets
+/** Type used to represent either a size or error passed through sockets
  *
  *  A valid nsapi_size_or_error_t is either a non-negative size or a
  *  negative error code from the nsapi_error_t
@@ -124,8 +125,19 @@ typedef enum nsapi_security {
     NSAPI_SECURITY_WPA_WPA2     = 0x4,      /*!< phrase conforms to WPA/WPA2 */
     NSAPI_SECURITY_PAP          = 0x5,      /*!< phrase conforms to PPP authentication context */
     NSAPI_SECURITY_CHAP         = 0x6,      /*!< phrase conforms to PPP authentication context */
+    NSAPI_SECURITY_EAP_TLS      = 0x7,      /*!< phrase conforms to EAP-TLS */
+    NSAPI_SECURITY_PEAP         = 0x8,      /*!< phrase conforms to PEAP */
+    NSAPI_SECURITY_WPA2_ENT     = 0x9,      /*!< phrase conforms to WPA2-AES and WPA-TKIP with enterprise security */
     NSAPI_SECURITY_UNKNOWN      = 0xFF,     /*!< unknown/unsupported security in scan results */
 } nsapi_security_t;
+
+/** Size of  2 char network interface name from driver
+ */
+#define NSAPI_INTERFACE_PREFIX_SIZE 2
+
+/** Maximum size of network interface name
+ */
+#define NSAPI_INTERFACE_NAME_MAX_SIZE 6
 
 /** Maximum size of IP address representation
  */
@@ -203,6 +215,7 @@ typedef void *nsapi_socket_t;
 typedef enum nsapi_protocol {
     NSAPI_TCP, /*!< Socket is of TCP type */
     NSAPI_UDP, /*!< Socket is of UDP type */
+    NSAPI_ICMP, /*!< Socket is of ICMP type */
 } nsapi_protocol_t;
 
 /** Enum of standardized stack option levels
@@ -254,7 +267,20 @@ typedef enum nsapi_socket_option {
     NSAPI_RCVBUF,            /*!< Sets recv buffer size */
     NSAPI_ADD_MEMBERSHIP,    /*!< Add membership to multicast address */
     NSAPI_DROP_MEMBERSHIP,   /*!< Drop membership to multicast address */
+    NSAPI_BIND_TO_DEVICE,        /*!< Bind socket network interface name*/
 } nsapi_socket_option_t;
+
+typedef enum nsapi_tlssocket_level {
+    NSAPI_TLSSOCKET_LEVEL   = 7099, /*!< TLSSocket option level - see nsapi_tlssocket_option_t for options*/
+} nsapi_tlssocket_level_t;
+
+typedef enum nsapi_tlssocket_option {
+    NSAPI_TLSSOCKET_SET_HOSTNAME,   /*!< Set host name */
+    NSAPI_TLSSOCKET_SET_CACERT,     /*!< Set server CA certificate */
+    NSAPI_TLSSOCKET_SET_CLCERT,     /*!< Set client certificate */
+    NSAPI_TLSSOCKET_SET_CLKEY,      /*!< Set client key */
+    NSAPI_TLSSOCKET_ENABLE          /*!< Enable TLSSocket */
+} nsapi_tlssocket_option_t;
 
 /** Supported IP protocol versions of IP stack
  *
@@ -351,7 +377,7 @@ typedef struct nsapi_stack_api {
      */
     nsapi_error_t (*add_dns_server)(nsapi_stack_t *stack, nsapi_addr_t addr);
 
-    /*  Set stack-specific stack options
+    /** Set stack-specific stack options
      *
      *  The setstackopt allow an application to pass stack-specific hints
      *  to the underlying stack. For unsupported options,
@@ -367,7 +393,7 @@ typedef struct nsapi_stack_api {
     nsapi_error_t (*setstackopt)(nsapi_stack_t *stack, int level,
                                  int optname, const void *optval, unsigned optlen);
 
-    /*  Get stack-specific stack options
+    /** Get stack-specific stack options
      *
      *  The getstackopt allow an application to retrieve stack-specific hints
      *  from the underlying stack. For unsupported options,
@@ -567,7 +593,7 @@ typedef struct nsapi_stack_api {
     void (*socket_attach)(nsapi_stack_t *stack, nsapi_socket_t socket,
                           void (*callback)(void *), void *data);
 
-    /*  Set stack-specific socket options
+    /** Set stack-specific socket options
      *
      *  The setsockopt allow an application to pass stack-specific hints
      *  to the underlying stack. For unsupported options,
@@ -584,7 +610,7 @@ typedef struct nsapi_stack_api {
     nsapi_error_t (*setsockopt)(nsapi_stack_t *stack, nsapi_socket_t socket, int level,
                                 int optname, const void *optval, unsigned optlen);
 
-    /*  Get stack-specific socket options
+    /** Get stack-specific socket options
      *
      *  The getstackopt allow an application to retrieve stack-specific hints
      *  from the underlying stack. For unsupported options,

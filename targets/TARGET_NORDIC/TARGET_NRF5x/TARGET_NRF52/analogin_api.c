@@ -1,5 +1,6 @@
 /* mbed Microcontroller Library
- * Copyright (c) 2006-2013 ARM Limited
+ * Copyright (c) 2016-2018 Arm Limited and affiliates.
+ * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,25 +14,29 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
- 
-#ifdef DEVICE_ANALOGIN
+
+#if DEVICE_ANALOGIN
+
 #include "hal/analogin_api.h"
 
 #include "pinmap.h"
 #include "PeripheralPins.h"
 
-#include "nrf_drv_saadc.h"
+#include "nrfx_saadc.h"
+#include "nrfx_errors.h"
+#include "sdk_config.h"
 
 #define ADC_12BIT_RANGE 0x0FFF
 #define ADC_16BIT_RANGE 0xFFFF
 
 /* Unused event handler but driver requires one. */
-static void analog_in_event_handler(nrf_drv_saadc_evt_t const *p_event)
+static void analog_in_event_handler(nrfx_saadc_evt_t const *p_event)
 {
     (void) p_event;
+
 }
 
-/* Interrupt handler implemented in nrf_drv_saadc.c. */
+/* Interrupt handler implemented in nrfx_saadc.c. */
 void SAADC_IRQHandler(void);
 
 /** Initialize the analogin peripheral
@@ -40,8 +45,14 @@ void SAADC_IRQHandler(void);
  * @param obj The analogin object to initialize
  * @param pin The analogin pin name
  */
-void analogin_init(analogin_t *obj, PinName pin)
-{    
+#if STATIC_PINMAP_READY
+#define ANALOGIN_INIT_DIRECT analogin_init_direct
+void analogin_init_direct(analogin_t *obj, const PinMap *pinmap)
+#else
+#define ANALOGIN_INIT_DIRECT _analogin_init_direct
+static void _analogin_init_direct(analogin_t *obj, const PinMap *pinmap)
+#endif
+{
     MBED_ASSERT(obj);
 
     /* Only initialize SAADC on first pin. */
@@ -52,28 +63,28 @@ void analogin_init(analogin_t *obj, PinName pin)
         first_init = false;
 
         /* Use configuration from sdk_config.h.
-         * Default is: 
+         * Default is:
          *  - 12 bit.
          *  - No oversampling.
          *  - Priority 7 (lowest).
          *  - No low power mode.
          */
-        nrf_drv_saadc_config_t adc_config = {
+        nrfx_saadc_config_t adc_config = {
             .resolution         = (nrf_saadc_resolution_t)SAADC_CONFIG_RESOLUTION,
             .oversample         = (nrf_saadc_oversample_t)SAADC_CONFIG_OVERSAMPLE,
             .interrupt_priority = SAADC_CONFIG_IRQ_PRIORITY,
             .low_power_mode     = SAADC_CONFIG_LP_MODE
         };
 
-        ret_code_t result = nrf_drv_saadc_init(&adc_config, analog_in_event_handler);
-        MBED_ASSERT(result == NRF_SUCCESS);
+        ret_code_t result = nrfx_saadc_init(&adc_config, analog_in_event_handler);
+        MBED_ASSERT(result == NRFX_SUCCESS);
 
         /* Register interrupt handler in vector table. */
         NVIC_SetVector(SAADC_IRQn, (uint32_t)SAADC_IRQHandler);
     }
 
     /* Use pinmap function to get associated channel. */
-    uint32_t channel = pinmap_function(pin, PinMap_ADC);
+    uint32_t channel = (uint32_t) pinmap->function;
     MBED_ASSERT(channel != (uint32_t) NC);
 
     /* Account for an off-by-one in Channel definition and Input definition. */
@@ -94,13 +105,22 @@ void analogin_init(analogin_t *obj, PinName pin)
         .pin_n      = NRF_SAADC_INPUT_DISABLED
     };
 
-    ret_code_t result = nrf_drv_saadc_channel_init(channel, &channel_config);
-    MBED_ASSERT(result == NRF_SUCCESS);
+    ret_code_t result = nrfx_saadc_channel_init(channel, &channel_config);
+    MBED_ASSERT(result == NRFX_SUCCESS);
 
     /* Store channel in ADC object. */
     obj->channel = channel;
 }
 
+void analogin_init(analogin_t *obj, PinName pin)
+{
+    int peripheral = (int)pinmap_peripheral(pin, PinMap_ADC);
+    int function = (int)pinmap_find_function(pin, PinMap_ADC);
+
+    const PinMap static_pinmap = {pin, peripheral, function};
+
+    ANALOGIN_INIT_DIRECT(obj, &static_pinmap);
+}
 
 /** Read the input voltage, represented as a float in the range [0.0, 1.0]
  *
@@ -108,18 +128,18 @@ void analogin_init(analogin_t *obj, PinName pin)
  * @return A floating value representing the current input voltage
  */
 uint16_t analogin_read_u16(analogin_t *obj)
-{    
+{
     MBED_ASSERT(obj);
 
     /* Default return value is 0. */
     uint16_t retval = 0;
-    
+
     /* Read single channel, blocking. */
     nrf_saadc_value_t value = { 0 };
-    ret_code_t result = nrf_drv_saadc_sample_convert(obj->channel, &value);
+    ret_code_t result = nrfx_saadc_sample_convert(obj->channel, &value);
 
     /* nrf_saadc_value_t is a signed integer. Only take the absolute value. */
-    if ((result == NRF_SUCCESS) && (value > 0)) {
+    if ((result == NRFX_SUCCESS) && (value > 0)) {
 
         /* Normalize 12 bit ADC value to 16 bit Mbed ADC range. */
         uint32_t normalized = value;
@@ -143,6 +163,11 @@ float analogin_read(analogin_t *obj)
     float result = ((float) value / (float) ADC_16BIT_RANGE);
 
     return result;
+}
+
+const PinMap *analogin_pinmap()
+{
+    return PinMap_ADC;
 }
 
 #endif // DEVICE_ANALOGIN

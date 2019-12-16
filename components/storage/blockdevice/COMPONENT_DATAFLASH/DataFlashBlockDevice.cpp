@@ -15,9 +15,11 @@
  */
 
 #include "DataFlashBlockDevice.h"
-#include "mbed_critical.h"
-
+#include "mbed_atomic.h"
+#include "rtos/ThisThread.h"
 #include <inttypes.h>
+
+using namespace mbed;
 
 /* constants */
 #define DATAFLASH_READ_SIZE        1
@@ -59,6 +61,7 @@ enum opcode {
     DATAFLASH_OP_PROGRAM_DIRECT            = 0x02, // Program through Buffer 1 without Built-In Erase
     DATAFLASH_OP_PROGRAM_DIRECT_WITH_ERASE = 0x82,
     DATAFLASH_OP_ERASE_BLOCK               = 0x50,
+    DATAFLASH_OP_ERASE_PAGE                = 0x81,
 };
 
 /* non-exhaustive command list */
@@ -131,11 +134,11 @@ enum dummy {
 };
 
 DataFlashBlockDevice::DataFlashBlockDevice(PinName mosi,
-        PinName miso,
-        PinName sclk,
-        PinName cs,
-        int freq,
-        PinName nwp)
+                                           PinName miso,
+                                           PinName sclk,
+                                           PinName cs,
+                                           int freq,
+                                           PinName nwp)
     :   _spi(mosi, miso, sclk),
         _cs(cs, 1),
         _nwp(nwp),
@@ -164,6 +167,7 @@ DataFlashBlockDevice::DataFlashBlockDevice(PinName mosi,
 
 int DataFlashBlockDevice::init()
 {
+    _mutex.lock();
     DEBUG_PRINTF("init\r\n");
 
     if (!_is_initialized) {
@@ -173,6 +177,7 @@ int DataFlashBlockDevice::init()
     uint32_t val = core_util_atomic_incr_u32(&_init_ref_count, 1);
 
     if (val != 1) {
+        _mutex.unlock();
         return BD_ERROR_OK;
     }
 
@@ -281,33 +286,40 @@ int DataFlashBlockDevice::init()
         _is_initialized = true;
     }
 
+    _mutex.unlock();
     return result;
 }
 
 int DataFlashBlockDevice::deinit()
 {
+    _mutex.lock();
     DEBUG_PRINTF("deinit\r\n");
 
     if (!_is_initialized) {
         _init_ref_count = 0;
+        _mutex.unlock();
         return BD_ERROR_OK;
     }
 
     uint32_t val = core_util_atomic_decr_u32(&_init_ref_count, 1);
 
     if (val) {
+        _mutex.unlock();
         return BD_ERROR_OK;
     }
 
     _is_initialized = false;
+    _mutex.unlock();
     return BD_ERROR_OK;
 }
 
 int DataFlashBlockDevice::read(void *buffer, bd_addr_t addr, bd_size_t size)
 {
+    _mutex.lock();
     DEBUG_PRINTF("read: %p %" PRIX64 " %" PRIX64 "\r\n", buffer, addr, size);
 
     if (!_is_initialized) {
+        _mutex.unlock();
         return BD_ERROR_DEVICE_ERROR;
     }
 
@@ -345,14 +357,17 @@ int DataFlashBlockDevice::read(void *buffer, bd_addr_t addr, bd_size_t size)
         result = BD_ERROR_OK;
     }
 
+    _mutex.unlock();
     return result;
 }
 
 int DataFlashBlockDevice::program(const void *buffer, bd_addr_t addr, bd_size_t size)
 {
+    _mutex.lock();
     DEBUG_PRINTF("program: %p %" PRIX64 " %" PRIX64 "\r\n", buffer, addr, size);
 
     if (!_is_initialized) {
+        _mutex.unlock();
         return BD_ERROR_DEVICE_ERROR;
     }
 
@@ -411,14 +426,17 @@ int DataFlashBlockDevice::program(const void *buffer, bd_addr_t addr, bd_size_t 
         _write_enable(false);
     }
 
+    _mutex.unlock();
     return result;
 }
 
 int DataFlashBlockDevice::erase(bd_addr_t addr, bd_size_t size)
 {
+    _mutex.lock();
     DEBUG_PRINTF("erase: %" PRIX64 " %" PRIX64 "\r\n", addr, size);
 
     if (!_is_initialized) {
+        _mutex.unlock();
         return BD_ERROR_DEVICE_ERROR;
     }
 
@@ -430,17 +448,17 @@ int DataFlashBlockDevice::erase(bd_addr_t addr, bd_size_t size)
         /* disable write protection */
         _write_enable(true);
 
-        /* erase one block at a time until the full size has been erased */
+        /* erase one page at a time until the full size has been erased */
         uint32_t erased = 0;
         while (erased < size) {
 
-            /* set block erase opcode */
-            uint32_t command = DATAFLASH_OP_ERASE_BLOCK;
+            /* set page erase opcode */
+            uint32_t command = DATAFLASH_OP_ERASE_PAGE;
 
             /* translate address */
             uint32_t address = _translate_address(addr);
 
-            /* set block address */
+            /* set page address */
             command = (command << 8) | ((address >> 16) & 0xFF);
             command = (command << 8) | ((address >>  8) & 0xFF);
             command = (command << 8) | (address & 0xFF);
@@ -457,14 +475,15 @@ int DataFlashBlockDevice::erase(bd_addr_t addr, bd_size_t size)
             }
 
             /* update loop variables */
-            addr += _block_size;
-            erased += _block_size;
+            addr += _page_size;
+            erased += _page_size;
         }
 
         /* enable write protection */
         _write_enable(false);
     }
 
+    _mutex.unlock();
     return result;
 }
 
@@ -484,23 +503,34 @@ bd_size_t DataFlashBlockDevice::get_program_size() const
 
 bd_size_t DataFlashBlockDevice::get_erase_size() const
 {
-    DEBUG_PRINTF("erase size: %" PRIX16 "\r\n", _block_size);
-
-    return _block_size;
+    _mutex.lock();
+    DEBUG_PRINTF("erase size: %" PRIX16 "\r\n", _page_size);
+    bd_size_t block_size = _page_size;
+    _mutex.unlock();
+    return block_size;
 }
 
 bd_size_t DataFlashBlockDevice::get_erase_size(bd_addr_t addr) const
 {
-    DEBUG_PRINTF("erase size: %" PRIX16 "\r\n", _block_size);
-
-    return _block_size;
+    _mutex.lock();
+    DEBUG_PRINTF("erase size: %" PRIX16 "\r\n", _page_size);
+    bd_size_t block_size = _page_size;
+    _mutex.unlock();
+    return block_size;
 }
 
 bd_size_t DataFlashBlockDevice::size() const
 {
+    _mutex.lock();
     DEBUG_PRINTF("device size: %" PRIX32 "\r\n", _device_size);
+    bd_size_t device_size = _device_size;
+    _mutex.unlock();
+    return device_size;
+}
 
-    return _device_size;
+const char *DataFlashBlockDevice::get_type() const
+{
+    return "DATAFLASH";
 }
 
 /**
@@ -512,6 +542,7 @@ bd_size_t DataFlashBlockDevice::size() const
  */
 uint16_t DataFlashBlockDevice::_get_register(uint8_t opcode)
 {
+    _mutex.lock();
     DEBUG_PRINTF("_get_register: %" PRIX8 "\r\n", opcode);
 
     /* activate device */
@@ -527,6 +558,7 @@ uint16_t DataFlashBlockDevice::_get_register(uint8_t opcode)
     /* deactivate device */
     _cs = 1;
 
+    _mutex.unlock();
     return status;
 }
 
@@ -629,8 +661,8 @@ int DataFlashBlockDevice::_sync(void)
             break;
             /* wait the typical write period before trying again */
         } else {
-            DEBUG_PRINTF("wait_ms: %d\r\n", DATAFLASH_TIMING_ERASE_PROGRAM_PAGE);
-            wait_ms(DATAFLASH_TIMING_ERASE_PROGRAM_PAGE);
+            DEBUG_PRINTF("sleep_for: %d\r\n", DATAFLASH_TIMING_ERASE_PROGRAM_PAGE);
+            rtos::ThisThread::sleep_for(DATAFLASH_TIMING_ERASE_PROGRAM_PAGE);
         }
     }
 

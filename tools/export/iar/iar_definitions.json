@@ -66,6 +66,9 @@
     "MK64FN1M0xxx12": {
         "OGChipSelectEditMenu": "MK64FN1M0xxx12\tNXP MK64FN1M0xxx12"
     },
+    "RAPIDIOT_K64F": {
+        "OGChipSelectEditMenu": "MK64FN1M0xxx12\tNXP MK64FN1M0xxx12"
+    },
     "MK66FN2M0xxx18": {
         "OGChipSelectEditMenu": "MK66FN2M0xxx18\tNXP MK66FN2M0xxx18"
     },
@@ -92,6 +95,12 @@
     },
     "LPC54628J512ET180": {
         "OGChipSelectEditMenu": "LPC54618J512\tNXP LPC54618J512"
+    },
+    "LPC55S69JBD100": {
+        "OGChipSelectEditMenu": "LPC55S69_core0\tNXP LPC55S69_core0"
+    },
+    "MIMXRT1052": {
+        "OGChipSelectEditMenu": "MIMXRT1052xxx6B\tNXP MIMXRT1052xxx6B"
     },
     "STM32F072RB": {
         "OGChipSelectEditMenu": "STM32F072RB\tST STM32F072RB"
@@ -120,11 +129,17 @@
     "STM32L151CC": {
         "OGChipSelectEditMenu": "STM32L151CC\tST STM32L151CC"
     },
+    "STM32L151CBxxA": {
+        "OGChipSelectEditMenu": "STM32L151CB-A\tST STM32L151CB-A"
+    },
     "STM32L152RE": {
         "OGChipSelectEditMenu": "STM32L152xE\tST STM32L152xE"
     },
     "STM32F439ZI": {
         "OGChipSelectEditMenu": "STM32F439ZI\tST STM32F439ZI"
+    },
+    "STM32F439VI": {
+        "OGChipSelectEditMenu": "STM32F439VI\tST STM32F439VI"
     },
     "LPC1768": {
         "OGChipSelectEditMenu": "LPC1768\tNXP LPC1768"
@@ -246,11 +261,25 @@
     "NCS36510":{
         "OGChipSelectEditMenu": "NCS36510\tONSemiconductor NCS36510"
     },
+    "NANO130KE3BN": {
+        "OGChipSelectEditMenu": "Nano100BN series\tNuvoton Nano100BN series (Nano100BN,Nano110BN,Nano120BN,Nano130BN)",
+        "IlinkOverrideProgramEntryLabel": 1,
+        "IlinkProgramEntryLabel": "Reset_Handler"
+    },
     "NUC472HI8AE": {
-        "OGChipSelectEditMenu": "NUC400AE series\tNuvoton NUC400AE series (NUC442AE,NUC472AE)"
+        "OGChipSelectEditMenu": "NUC400AE series\tNuvoton NUC400AE series (NUC442AE,NUC472AE)",
+        "IlinkOverrideProgramEntryLabel": 1,
+        "IlinkProgramEntryLabel": "Reset_Handler"
     },
     "M453VG6AE": {
-        "OGChipSelectEditMenu": "M451AE series\tNuvoton M451AE series (M451AE,M452AE,M453AE,M451MAE)"
+        "OGChipSelectEditMenu": "M451AE series\tNuvoton M451AE series (M451AE,M452AE,M453AE,M451MAE)",
+        "IlinkOverrideProgramEntryLabel": 1,
+        "IlinkProgramEntryLabel": "Reset_Handler"
+    },
+    "M487JIDAE": {
+        "OGChipSelectEditMenu": "M481AE series\tNuvoton M480AE series (M481AE,M482AE,M483AE,M484AE,M485AE,M487AE)",
+        "IlinkOverrideProgramEntryLabel": 1,
+        "IlinkProgramEntryLabel": "Reset_Handler"
     },
     "nRF52840_xxAA":{
         "OGChipSelectEditMenu": "nRF52840_xxAA\tNordicSemi nRF52840_xxAA",
@@ -278,5 +307,90 @@
         "OGChipSelectEditMenu": "TMPM3H6FWFG\tToshiba TMPM3H6FWFG",
         "GFPUCoreSlave": 24,
         "GBECoreSlave": 24
+    },
+    "STM32F446VE": {
+        "OGChipSelectEditMenu": "STM32F446VE\tST STM32F446VE"
+    },
+    "STM32F303VC": {
+        "OGChipSelectEditMenu": "STM32F303VC\tST STM32F303VC"
+    },
+    "STM32F334C8": {
+        "OGChipSelectEditMenu": "STM32F334C8\tST STM32F334C8"
+    },
+    "STM32F413ZH": {
+        "OGChipSelectEditMenu": "STM32F413ZH\tST STM32F413ZH"
+    },
+    "STM32F469NI": {
+        "OGChipSelectEditMenu": "STM32F469NI\tST STM32F469NI"
+    },
+    "STM32F769NI": {
+        "OGChipSelectEditMenu": "STM32F769NI\tST STM32F769NI"
+    },
+    "STM32F303ZE": {
+        "OGChipSelectEditMenu": "STM32F303ZE\tST STM32F303ZE"
+    },
+    "STM32F410RB": {
+        "OGChipSelectEditMenu": "STM32F410RB\tST STM32F410RB"
+    },
+    "STM32F412ZG": {
+        "OGChipSelectEditMenu": "STM32F412ZG\tST STM32F412ZG"
+    },
+    "STM32F413ZH": {
+        "OGChipSelectEditMenu": "STM32F413ZH\tST STM32F413ZH"
+    },
+    "STM32F756ZG": {
+        "OGChipSelectEditMenu": "STM32F756ZG\tST STM32F756ZG"
+    },
+    "STM32L053R8": {
+        "OGChipSelectEditMenu": "STM32L053R8\tST STM32L053R8"
+    },
+    "STM32L432KC": {
+        "OGChipSelectEditMenu": "STM32L432KC\tST STM32L432KC"
+    },
+    "CY8C6347BZI-BLD53M0+": {
+        "OGChipSelectEditMenu": "CY8C6347BZI-BLD53M0+\tCypress CY8C6347BZI-BLD53M0+",
+        "CoreVariant": 35,
+        "GFPUCoreSlave": 35,
+        "GBECoreSlave": 35,
+        "GFPUCoreSlave2": 35
+    },
+    "CY8C6347BZI-BLD53M4": {
+        "OGChipSelectEditMenu": "CY8C6347BZI-BLD53M4\tCypress CY8C6347BZI-BLD53M4",
+        "CoreVariant": 39,
+        "GFPUCoreSlave": 39,
+        "GBECoreSlave": 39,
+        "FPU2": 6,
+        "GFPUCoreSlave2": 39
+    },
+    "M2351KIAAEES": {
+        "OGChipSelectEditMenu": "M2351 series\tNuvoton M2351 series",
+        "IlinkOverrideProgramEntryLabel": 1,
+        "IlinkProgramEntryLabel": "Reset_Handler",
+        "TrustZone": 1
+    },
+    "STM32H743ZI": {
+        "OGChipSelectEditMenu": "STM32H743ZI\tST STM32H743ZI"
+    },
+    "STM32H747XIHx": {
+        "OGChipSelectEditMenu": "STM32H747XI_CM7\tST STM32H747XI_CM7"
+    },
+    "DISCO_H747I_CM4": {
+        "OGChipSelectEditMenu": "STM32H747XI_CM4\tST STM32H747XI_CM4"
+    },
+    "CC3220SF": {
+        "OGChipSelectEditMenu": "CC3220SF\tTexasInstruments CC3220SF",
+        "CoreVariant": 39,
+        "GFPUCoreSlave": 39,
+        "GBECoreSlave": 39
+    },
+    "TMPM3HQFDFG":{
+        "OGChipSelectEditMenu": "TMPM3HQFDFG\tToshiba TMPM3HQFDFG",
+        "GFPUCoreSlave": 21,
+        "GBECoreSlave": 21
+    },
+    "TMPM4G9F15FG":{
+        "OGChipSelectEditMenu": "TMPM4G9F15FG\tToshiba TMPM4G9F15FG",
+        "GFPUCoreSlave": 21,
+        "GBECoreSlave": 21
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, Arm Limited and affiliates.
+ * Copyright (c) 2017-2018, Arm Limited and affiliates.
  * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -33,7 +33,7 @@ int ns_file_system_set_root_path(const char *root_path)
         return 0;
     }
 
-    new_root_path = ns_dyn_mem_alloc(strlen(root_path)+1);
+    new_root_path = ns_dyn_mem_alloc(strlen(root_path) + 1);
     if (!new_root_path) {
         // mem alloc failed
         return -2;

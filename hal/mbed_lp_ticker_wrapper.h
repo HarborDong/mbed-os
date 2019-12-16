@@ -3,6 +3,7 @@
 /** @{*/
 /* mbed Microcontroller Library
  * Copyright (c) 2018 ARM Limited
+ * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -53,6 +54,9 @@ const ticker_data_t *get_lp_ticker_wrapper_data(const ticker_data_t *data);
  *
  * Pass through all interrupts to the low power ticker and stop using
  * the microsecond ticker.
+ *
+ * @warning: Make sure to suspend the LP ticker first (call ticker_suspend()),
+ * otherwise the behavior is undefined.
  */
 void lp_ticker_wrapper_suspend(void);
 

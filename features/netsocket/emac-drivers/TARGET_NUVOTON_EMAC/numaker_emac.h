@@ -1,12 +1,23 @@
-/*
- * Copyright (c) 2017 ARM Limited. All rights reserved.
+/* Copyright (c) 2017 ARM Limited
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 #ifndef NUMAKER_EMAC_H_
 #define NUMAKER_EMAC_H_
 
 #include "EMAC.h"
-#include "rtos/Semaphore.h"
 #include "rtos/Mutex.h"
 
 class NUMAKER_EMAC : public EMAC {
@@ -149,7 +160,6 @@ private:
     mbed_rtos_storage_thread_t thread_cb;
     osThreadId_t thread; /**< Processing thread */
     rtos::Mutex TXLockMutex;/**< TX critical section mutex */
-    rtos::Semaphore xTXDCountSem; /**< TX free buffer counting semaphore */
     emac_link_input_cb_t emac_link_input_cb; /**< Callback for incoming data */
     emac_link_state_change_cb_t emac_link_state_cb; /**< Link state change callback */
     EMACMemoryManager *memory_manager; /**< Memory manager */

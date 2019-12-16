@@ -216,8 +216,8 @@ typedef enum {
     /**** USB pins ****/
     USB_DM = PA_11,
     USB_DP = PA_12,
-    USB_NOE = PC_9,
-    USB_NOE_ALT0 = PA_13,
+    USB_NOE = PA_13,
+    USB_NOE_ALT0 = PC_9,
 
     /**** OSCILLATOR pins ****/
     RCC_OSC32_IN = PC_14,
@@ -235,14 +235,6 @@ typedef enum {
     SYS_WKUP1 = PA_0,
     SYS_WKUP2 = PC_13,
     SYS_WKUP4 = PA_2,
-
-    /**** QSPI pins ****/
-    QSPI1_IO0 = PB_1,
-    QSPI1_IO1 = PB_0,
-    QSPI1_IO2 = PA_7,
-    QSPI1_IO3 = PA_6,
-    QSPI1_SCK = PB_10,
-    QSPI1_CSN = PB_11,
 
     // Not connected
     NC = (int)0xFFFFFFFF

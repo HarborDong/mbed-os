@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2017, Arm Limited and affiliates.
+ * Copyright (c) 2015-2019, Arm Limited and affiliates.
  * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -21,7 +21,7 @@
 #include "ns_list.h"
 #include "ns_trace.h"
 #include "nsdynmemLIB.h"
-#include "Core/include/socket.h"
+#include "Core/include/ns_socket.h"
 #include "NWK_INTERFACE/Include/protocol.h"
 #include "Common_Protocols/ipv6.h"
 #include "Common_Protocols/icmpv6.h"
@@ -58,7 +58,7 @@ void ipv6_interface_resolve_send_ns(ipv6_neighbour_cache_t *cache, ipv6_neighbou
 
 #ifdef HAVE_IPV6_ND
     tr_debug("Sending %s NS for: %s",
-           (unicast ? "unicast" : "multicast"), trace_ipv6(entry->ip_address));
+             (unicast ? "unicast" : "multicast"), trace_ipv6(entry->ip_address));
 
     buffer_t *prompting_packet = ns_list_get_first(&entry->queue);
     buffer_t *buf = icmpv6_build_ns(cur_interface, entry->ip_address,

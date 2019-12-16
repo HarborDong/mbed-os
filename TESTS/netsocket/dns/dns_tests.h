@@ -18,8 +18,17 @@
 #ifndef DNS_TESTS_H
 #define DNS_TESTS_H
 
+#include "nsapi_dns.h"
+#include "mbed_trace.h"
+
+#define TRACE_GROUP "GRNT"
+
 #ifndef MBED_CONF_APP_DNS_SIMULT_QUERIES
+#ifdef MBED_CONF_CELLULAR_OFFLOAD_DNS_QUERIES
+#define MBED_CONF_APP_DNS_SIMULT_QUERIES   MBED_CONF_CELLULAR_OFFLOAD_DNS_QUERIES
+#else
 #define MBED_CONF_APP_DNS_SIMULT_QUERIES   5
+#endif
 #endif
 
 #ifndef MBED_CONF_NSAPI_DNS_CACHE_SIZE
@@ -60,6 +69,14 @@ NetworkInterface *get_interface();
 void hostbyname_cb(void *data, nsapi_error_t result, SocketAddress *address);
 void do_asynchronous_gethostbyname(const char hosts[][DNS_TEST_HOST_LEN], unsigned int op_count, int *exp_ok, int *exp_no_mem, int *exp_dns_failure, int *exp_timeout);
 void do_gethostbyname(const char hosts[][DNS_TEST_HOST_LEN], unsigned int op_count, int *exp_ok, int *exp_no_mem, int *exp_dns_failure, int *exp_timeout);
+
+namespace dns_global {
+#ifdef MBED_GREENTEA_TEST_DNSSOCKET_TIMEOUT_S
+static const int TESTS_TIMEOUT = MBED_GREENTEA_TEST_DNSSOCKET_TIMEOUT_S;
+#else
+static const int TESTS_TIMEOUT = 14 * 60;
+#endif
+}
 
 /*
  * Test cases

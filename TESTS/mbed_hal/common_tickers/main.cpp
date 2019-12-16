@@ -13,6 +13,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+#if !defined(MBED_RTOS_CONF_PRESENT)
+#error [NOT_SUPPORTED] usticker test cases require a RTOS to run
+#else
+
 #include "mbed.h"
 #include "greentea-client/test_env.h"
 #include "unity.h"
@@ -32,7 +37,7 @@ extern "C" {
 
 #if !DEVICE_USTICKER
 #error [NOT_SUPPORTED] test not supported
-#endif
+#else
 
 #define US_PER_S 1000000
 
@@ -129,7 +134,7 @@ void overflow_protect()
         return;
     }
 
-    while (intf->read() > ticks_now);
+    while (intf->read() >= ticks_now);
 }
 
 void ticker_event_handler_stub(const ticker_data_t *const ticker)
@@ -473,11 +478,14 @@ void ticker_speed_test(void)
 
     /* ---- Test fire_interrupt function. ---- */
     counter = NUM_OF_CALLS;
+    /* Disable ticker interrupt which would interfere with speed test */
+    core_util_critical_section_enter();
     start = us_ticker_read();
     while (counter--) {
         intf->fire_interrupt();
     }
     stop = us_ticker_read();
+    core_util_critical_section_exit();
 
     TEST_ASSERT(diff_us(start, stop, us_ticker_info) < (NUM_OF_CALLS * (MAX_FUNC_EXEC_TIME_US + DELTA_FUNC_EXEC_TIME_US)));
 
@@ -569,7 +577,7 @@ utest::v1::status_t lp_ticker_teardown(const Case *const source, const size_t pa
 
 utest::v1::status_t test_setup(const size_t number_of_cases)
 {
-    GREENTEA_SETUP(30, "default_auto");
+    GREENTEA_SETUP(80, "default_auto");
     return verbose_test_setup_handler(number_of_cases);
 }
 
@@ -602,3 +610,5 @@ int main()
 {
     return !Harness::run(specification);
 }
+#endif // !DEVICE_USTICKER
+#endif // !defined(MBED_RTOS_CONF_PRESENT)

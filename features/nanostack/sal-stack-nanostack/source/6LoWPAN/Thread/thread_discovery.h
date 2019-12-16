@@ -32,8 +32,16 @@
 
 struct protocol_interface_info_entry;
 
+/* Structure that discovery_response_list_t */
+typedef struct discovery_additional_info {
+    uint8_t domain_name[16];
+    uint16_t ae_port;
+    uint16_t nmk_port;
+    bool ccm_supported: 1;
+} discovery_additional_info_t;
+
 typedef struct discovery_response_list {
-    uint8_t reserved_opaque[21];
+    discovery_additional_info_t ccm_info;
     uint8_t network_name[16];
     uint8_t steering_data[16];
     uint8_t extented_pan_id[8];
@@ -43,8 +51,8 @@ typedef struct discovery_response_list {
     uint16_t commissioner_port;
     uint8_t channel;
     int8_t dbm;
-    unsigned version:4;
-    unsigned steering_data_valid:5;
+    unsigned version: 4;
+    unsigned steering_data_valid: 5;
 
     ns_list_link_t link;
 } discovery_response_list_t;
@@ -62,7 +70,7 @@ typedef struct {
     uint8_t *extented_pan_id;
     uint8_t *network_name;
     uint16_t pan_id;
-    unsigned version:4;
+    unsigned version: 4;
 } discover_server_info_t;
 
 /**
@@ -70,7 +78,7 @@ typedef struct {
  */
 typedef struct {
     uint32_t channel_mask;
-    bool joiner_flag:1;
+    bool joiner_flag: 1;
     bool native_commisioner; //Set for native commisioner
     uint8_t filter_tlv_length; //Optional Filter data length
     uint8_t *filter_tlv_data; //Pointer for filter specific data

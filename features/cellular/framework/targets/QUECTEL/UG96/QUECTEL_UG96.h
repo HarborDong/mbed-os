@@ -18,6 +18,15 @@
 #ifndef QUECTEL_UG96_H_
 #define QUECTEL_UG96_H_
 
+#ifdef TARGET_FF_ARDUINO
+#ifndef MBED_CONF_QUECTEL_UG96_TX
+#define MBED_CONF_QUECTEL_UG96_TX D1
+#endif
+#ifndef MBED_CONF_QUECTEL_UG96_RX
+#define MBED_CONF_QUECTEL_UG96_RX D0
+#endif
+#endif /* TARGET_FF_ARDUINO */
+
 #include "AT_CellularDevice.h"
 
 namespace mbed {
@@ -32,17 +41,13 @@ namespace mbed {
 
 class QUECTEL_UG96 : public AT_CellularDevice {
 public:
+    QUECTEL_UG96(FileHandle *fh);
 
-    QUECTEL_UG96(events::EventQueue &queue);
-    virtual ~QUECTEL_UG96();
-
-public: // CellularDevice
-    virtual CellularNetwork *open_network(FileHandle *fh);
-    virtual CellularPower *open_power(FileHandle *fh);
+protected: // AT_CellularDevice
+    virtual AT_CellularContext *create_context_impl(ATHandler &at, const char *apn, bool cp_req = false, bool nonip_req = false);
 
 public: // NetworkInterface
     void handle_urc(FileHandle *fh);
-
 };
 
 } // namespace mbed

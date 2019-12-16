@@ -27,6 +27,10 @@ ROOT = abspath(join(dirname(__file__), ".."))
 ##############################################################################
 BUILD_DIR = abspath(join(ROOT, "BUILD"))
 
+# Default directory for dual-core and v8 targets
+# delivering secure binaries across builds
+DELIVERY_DIR = abspath(join(ROOT, "DELIVERY"))
+
 # ARM Compiler 5
 ARM_PATH = ""
 
@@ -35,9 +39,6 @@ ARMC6_PATH = ""
 
 # GCC ARM
 GCC_ARM_PATH = ""
-
-# GCC CodeRed
-GCC_CR_PATH = ""
 
 # IAR
 IAR_PATH = ""
@@ -83,13 +84,14 @@ except ImportError:
 ##############################################################################
 # User Settings (env vars)
 ##############################################################################
-_ENV_PATHS = ['ARM_PATH', 'GCC_ARM_PATH', 'GCC_CR_PATH', 'IAR_PATH',
-              'ARMC6_PATH']
+_ENV_PATHS = ['ARM_PATH', 'GCC_ARM_PATH', 'IAR_PATH', 'ARMC6_PATH']
 
 for _n in _ENV_PATHS:
     if getenv('MBED_'+_n):
-        if exists(getenv('MBED_'+_n)):
-            globals()[_n] = getenv('MBED_'+_n)
+        # It's common to provide paths with quotes for certain OSes
+        env_path = getenv('MBED_'+_n).strip("\"'")
+        if exists(env_path):
+            globals()[_n] = env_path
         else:
             print("WARNING: MBED_%s set as environment variable but doesn't"
                   " exist" % _n)

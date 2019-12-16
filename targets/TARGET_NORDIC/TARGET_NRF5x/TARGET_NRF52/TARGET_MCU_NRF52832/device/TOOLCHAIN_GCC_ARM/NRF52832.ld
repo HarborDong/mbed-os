@@ -25,17 +25,17 @@
   #define MBED_APP_SIZE 0x80000
 #endif
 
-/* If softdevice is present, set aside space for it */
-#if defined(SOFTDEVICE_PRESENT)
-  #define MBED_RAM_START  0x200031D0
-  #define MBED_RAM_SIZE   0xCE30
-#else
-  #define MBED_RAM_START  0x20000000
-  #define MBED_RAM_SIZE   0x10000
+#if !defined(MBED_RAM_START)
+  #define MBED_RAM_START 0x20000000
+  #define MBED_RAM_SIZE 0x10000
+#endif
+
+#if !defined(MBED_BOOT_STACK_SIZE)
+    #define MBED_BOOT_STACK_SIZE 0x800
 #endif
 
 #define MBED_RAM0_START MBED_RAM_START
-#define MBED_RAM0_SIZE  0xDC
+#define MBED_RAM0_SIZE  0xE0
 #define MBED_RAM1_START (MBED_RAM_START + MBED_RAM0_SIZE)
 #define MBED_RAM1_SIZE  (MBED_RAM_SIZE - MBED_RAM0_SIZE)
 
@@ -145,14 +145,14 @@ SECTIONS
     .ARM.extab :
     {
         *(.ARM.extab* .gnu.linkonce.armextab.*)
-        . = ALIGN(4);
+        . = ALIGN(8);
     } > FLASH
 
     __exidx_start = .;
     .ARM.exidx :
     {
         *(.ARM.exidx* .gnu.linkonce.armexidx.*)
-        . = ALIGN(4);
+        . = ALIGN(8);
     } > FLASH
     __exidx_end = .;
 
@@ -164,13 +164,13 @@ SECTIONS
         *(vtable)
         *(.data*)
 
-        . = ALIGN(4);
+        . = ALIGN(8);
         /* preinit data */
         PROVIDE_HIDDEN (__preinit_array_start = .);
         KEEP(*(.preinit_array))
         PROVIDE_HIDDEN (__preinit_array_end = .);
 
-        . = ALIGN(4);
+        . = ALIGN(8);
         /* init data */
         PROVIDE_HIDDEN (__init_array_start = .);
         KEEP(*(SORT(.init_array.*)))
@@ -178,20 +178,20 @@ SECTIONS
         PROVIDE_HIDDEN (__init_array_end = .);
 
 
-        . = ALIGN(4);
+        . = ALIGN(8);
         /* finit data */
         PROVIDE_HIDDEN (__fini_array_start = .);
         KEEP(*(SORT(.fini_array.*)))
         KEEP(*(.fini_array))
         PROVIDE_HIDDEN (__fini_array_end = .);
 
-        . = ALIGN(4);
+        . = ALIGN(8);
         PROVIDE(__start_fs_data = .);
         KEEP(*(.fs_data))
         PROVIDE(__stop_fs_data = .);
-        
+
         *(.jcr)
-        . = ALIGN(4);
+        . = ALIGN(8);
         /* All data end */
         __data_end__ = .;
 
@@ -215,11 +215,11 @@ SECTIONS
 
     .bss :
     {
-        . = ALIGN(4);
+        . = ALIGN(8);
         __bss_start__ = .;
         *(.bss*)
         *(COMMON)
-        . = ALIGN(4);
+        . = ALIGN(8);
         __bss_end__ = .;
     } > RAM
 
@@ -230,8 +230,9 @@ SECTIONS
         *(.heap*);
 
         /* Expand the heap to reach the stack boundary. */
-        ASSERT(. <= (ORIGIN(RAM) + LENGTH(RAM) - 0x800), "heap region overflowed into stack");
-        . += (ORIGIN(RAM) + LENGTH(RAM) - 0x800) - .;
+        ASSERT(. <= (ORIGIN(RAM) + LENGTH(RAM) - MBED_BOOT_STACK_SIZE), "heap region overflowed into stack");
+        . = ORIGIN(RAM) + LENGTH(RAM) - MBED_BOOT_STACK_SIZE;
+        __HeapLimit = .;
     } > RAM
     PROVIDE(__heap_start = ADDR(.heap));
     PROVIDE(__heap_size = SIZEOF(.heap));
@@ -245,12 +246,12 @@ SECTIONS
     {
         __StackLimit = .;
         *(.stack*)
-        . += (ORIGIN(RAM) + LENGTH(RAM) - .);
+        . = ORIGIN(RAM) + LENGTH(RAM);
     } > RAM
 
     /* Set the stack top to the end of RAM and move down the stack limit by
      * the size of the stack_dummy section. */
     __StackTop = ORIGIN(RAM) + LENGTH(RAM);
-    __StackLimit = __StackTop - SIZEOF(.stack);
+    __StackLimit = __StackTop - MBED_BOOT_STACK_SIZE;
     PROVIDE(__stack = __StackTop);
 }

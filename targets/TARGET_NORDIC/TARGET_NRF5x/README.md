@@ -93,25 +93,16 @@ The tables must be placed in a C compilation file.
 
 ### Serial
 
-The serial implementation uses the UARTE module which works exclusively through EasyDMA and RAM buffers. For optimal performance, each configured instance (NRF52832 has 1, NRF52840 has 2) has three buffers statically assigned:
-
-1. Rx DMA buffer, which EasyDMA is currently writing to.
-1. Rx DMA buffer, pre-loaded in EasyDMA for automatic switchover.
-1. Rx FIFO buffer, for serving data to the application.
-
-When the first DMA buffer is full or flushed the interrupt handler will automatically copy the DMA buffer to the FIFO buffer. This happens in interrupt context to avoid data loss and with UARTE interrupts set at the highest priority. The FIFO buffer is backed by the Nordic atomic fifo, which can be read and written to safely without disabling interrupts.
+The serial implementation uses the UARTE module which works exclusively through EasyDMA and RAM buffers.
+To ensure no data is lost a FIFO is used to buffer data received. The FIFO buffer is backed by the Nordic atomic fifo, which can be read and written to safely without disabling interrupts.
 
 #### Customization
 
-All buffers can be resized to fit the application:
+The FIFOs can be resized to fit the application:
 
 ```
     "name": "nordic",
     "config": {
-        "uart_dma_size": {
-            "help": "UART DMA buffer. 2 buffers per instance. DMA buffer is filled by UARTE",
-            "value": 8
-        },
         "uart_0_fifo_size": {
             "help": "UART0 FIFO buffer. FIFO buffer is filled from DMA buffer.",
             "value": 32
@@ -123,7 +114,7 @@ All buffers can be resized to fit the application:
     }
 ```
 
-All DMA buffers are the same size and must be at least 5 bytes due to hardware restrictions. DMA buffers should be sized to handle the worst expected interrupt latency. FIFO buffers can be configured per instance and the size should reflect the largest expected burst data. For example, a serial debug port might receive a line of data at a time, so an 80 byte FIFO buffer would be adequate. A serial port connected to a wifi radio should have a FIFO buffer in the kilo byte range.
+FIFO buffers can be configured per instance and the size should reflect the largest expected burst data. For example, a serial debug port might receive a line of data at a time, so an 80 byte FIFO buffer would be adequate. A serial port connected to a wifi radio should have a FIFO buffer in the kilo byte range.
 
 For the NRF52840, UARTE instances are assigned based on pins and calling order. Serial objects with the same pin configurations will go to the same instance. A custom configuration table can be provided by overriding the weakly defined default empty table. In the example below, serial objects using pins `p1` and `p2` for `Tx` and `Rx` will always be assigned to `Instance 1` and serial objects using pins `p3` and `p4` for `Tx` and `Rx` will be assigned to `Instance 0` regardless of calling order. The custom configuration table must always be terminated with a row of `NC`.
 
@@ -137,11 +128,9 @@ const PinMapI2C PinMap_UART[] = {
 
 The table must be placed in a C compilation file.
 
+#### Flow Control (RTS/CTS)
 
-#### RTC2
-
-Because each DMA buffer must be at least 5 bytes deep, each buffer is automatically flushed after a certain idle period to ensure low latency and correctness. This idle timeout is implemented using 2 of the 4 channels on RTC instance 2. This leaves RTC0 for the SoftDevice and RTC1 for Mbed tickers.
-
+When hardware flow control is enabled the FIFO buffers can be reduced to save RAM. Flow control ensures that bytes cannot be dropped due to poor interrupt latency.
 
 #### SWI0
 
@@ -164,6 +153,16 @@ The assert handler is defined in mbed-os/features/FEATURE_BLE/targets/TARGET_NOR
  * It is not possible to do an asynchronous write from flash and receive non-asynchronously at the same time since the non-asynchronous receive buffer is being used as the temporary transmission buffer.
  * The driver will flush the DMA buffer after a configurable timeout. During this process the UART will be halted and therefor unable to receive data. Hardware flow control should be enabled to avoid missing any data during this window.
 
+#### Serial Wire Output (SWO)
+
+On the nRF52832 pin 18 (p18 or p0_18) is the SWO pin and a GPIO pin.  On the nRF52_DK and DELTA_DFBM_NQ620 targets p18 is also mapped to LED2, so the ITM has been removed from these targets to avoid contention.  If you need SWO capability instead of LED2, add the ITM through ```mbed_app.json```:
+```
+    "target_overrides": {
+        "*": {
+            "target.device_has_add": ["ITM"]
+        }
+    }
+```
 
 ## SoftDevice
 
@@ -181,41 +180,54 @@ SoftDevices are treated as bootloaders and automatically combined by the tools. 
 
 NRF52832 uses the S132 SoftDevice and NRF52840 uses the S140 SoftDevice.
 
-The X_OTA and X_MBR binaries are obtained from the original X_FULL SoftDevice by splitting it in an MBR part and a SoftDevice part. The MBR is needed for the bootloader and the SoftDevice for firmware updates.
+The OTA and MBR binaries are obtained from the original FULL SoftDevice by splitting it in an MBR part and a SoftDevice part. The MBR is needed for the bootloader and the SoftDevice for firmware updates.
 
 ### Changing SoftDevice
 
-By default, all applications are built with the FULL SoftDevice. This can be changed by modifying the application's `mbed_app.json` configuration file.
+By default, all applications are built with the FULL SoftDevice. This can be changed by modifying the application's `mbed_app.json` configuration file. Examples for the NRF52_DK and NRF52840_DK boards are shown below.
 
-Build application without SoftDevice:
+Build application with no MBR or SoftDevice:
 
 ```
     "target_overrides": {
-        "*": {
-            "target.extra_labels_remove": ["SOFTDEVICE_COMMON", "SOFTDEVICE_X_FULL"],
+        "NRF52_DK": {
+            "target.extra_labels_remove": ["SOFTDEVICE_COMMON", "SOFTDEVICE_S132_FULL"],
             "target.extra_labels_add": ["SOFTDEVICE_NONE"]
-        }
+        },
+        "NRF52840_DK": {
+            "target.extra_labels_remove": ["SOFTDEVICE_COMMON", "SOFTDEVICE_S140_FULL"],
+            "target.extra_labels_add": ["SOFTDEVICE_NONE"]
+        }       
     }
 ```
 
-Build application for firmware update using SoftDevice X:
+
+Build application with MBR only:
 
 ```
     "target_overrides": {
-        "*": {
-            "target.extra_labels_remove": ["SOFTDEVICE_X_FULL"],
-            "target.extra_labels_add": ["SOFTDEVICE_X_OTA"]
-        }
+        "NRF52_DK": {
+            "target.extra_labels_remove": ["SOFTDEVICE_COMMON", "SOFTDEVICE_S132_FULL"],
+            "target.extra_labels_add": ["SOFTDEVICE_S132_MBR"]
+        },
+        "NRF52840_DK": {
+            "target.extra_labels_remove": ["SOFTDEVICE_S140_FULL"],
+            "target.extra_labels_add": ["SOFTDEVICE_S140_MBR"]
+        }              
     }
 ```
 
-Build bootloader without SoftDevice X:
+## NRF52840 CryptoCell310 Support 
 
+By default, all NRF52840 applications will use the CryptoCell310 subsystem which is built into the NRF52840.  This provides hardware support for random number generation and encryption which are utilized by Mbed TLS.  If using the CryptoCell310 subsystem is not desired, it can be replaced with a software implementation.  This can be done by modifying the application's `mbed_app.json` configuration file as shown below.
+ 
 ```
     "target_overrides": {
-        "*": {
-            "target.extra_labels_remove": ["SOFTDEVICE_COMMON", "SOFTDEVICE_X_FULL"],
-            "target.extra_labels_add": ["SOFTDEVICE_X_MBR"]
+        "NRF52840_DK": {
+            "target.features_remove": ["CRYPTOCELL310"],
+            "target.macros_remove": ["MBEDTLS_CONFIG_HW_SUPPORT"],
+            "target.macros_add": ["NRFX_RNG_ENABLED=1", "RNG_ENABLED=1", "NRF_QUEUE_ENABLED=1"]
         }
     }
 ```
+

@@ -24,28 +24,9 @@
 
 
 
-static bool ipv6_is_valid(const char *addr)
-{
-    // Check each digit for [0-9a-fA-F:]
-    // Must also have at least 2 colons
-    int colons = 0;
-    for (int i = 0; addr[i]; i++) {
-        if (!(addr[i] >= '0' && addr[i] <= '9') &&
-                !(addr[i] >= 'a' && addr[i] <= 'f') &&
-                !(addr[i] >= 'A' && addr[i] <= 'F') &&
-                addr[i] != ':') {
-            return false;
-        }
-        if (addr[i] == ':') {
-            colons++;
-        }
-    }
-
-    return colons >= 2;
-}
-
 SocketAddress::SocketAddress(nsapi_addr_t addr, uint16_t port)
 {
+    mem_init();
     _ip_address = NULL;
     set_addr(addr);
     set_port(port);
@@ -53,6 +34,7 @@ SocketAddress::SocketAddress(nsapi_addr_t addr, uint16_t port)
 
 SocketAddress::SocketAddress(const char *addr, uint16_t port)
 {
+    mem_init();
     _ip_address = NULL;
     set_ip_address(addr);
     set_port(port);
@@ -60,6 +42,7 @@ SocketAddress::SocketAddress(const char *addr, uint16_t port)
 
 SocketAddress::SocketAddress(const void *bytes, nsapi_version_t version, uint16_t port)
 {
+    mem_init();
     _ip_address = NULL;
     set_ip_bytes(bytes, version);
     set_port(port);
@@ -67,9 +50,17 @@ SocketAddress::SocketAddress(const void *bytes, nsapi_version_t version, uint16_
 
 SocketAddress::SocketAddress(const SocketAddress &addr)
 {
+    mem_init();
     _ip_address = NULL;
     set_addr(addr.get_addr());
     set_port(addr.get_port());
+}
+
+void SocketAddress::mem_init(void)
+{
+    _addr.version = NSAPI_UNSPEC;
+    memset(_addr.bytes, 0, NSAPI_IP_BYTES);
+    _port = 0;
 }
 
 bool SocketAddress::set_ip_address(const char *addr)
@@ -80,9 +71,8 @@ bool SocketAddress::set_ip_address(const char *addr)
     if (addr && stoip4(addr, strlen(addr), _addr.bytes)) {
         _addr.version = NSAPI_IPv4;
         return true;
-    } else if (addr && ipv6_is_valid(addr)) {
+    } else if (addr && stoip6(addr, strlen(addr), _addr.bytes)) {
         _addr.version = NSAPI_IPv6;
-        stoip6(addr, strlen(addr), _addr.bytes);
         return true;
     } else {
         _addr = nsapi_addr_t();

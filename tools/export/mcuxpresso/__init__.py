@@ -1,6 +1,6 @@
 """
 mbed SDK
-Copyright (c) 2011-2016 ARM Limited
+Copyright (c) 2011-2019 ARM Limited
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -28,9 +28,10 @@ from builtins import str
 import copy
 import tempfile
 import shutil
+import re
 
 from subprocess import Popen, PIPE
-from os import getcwd, remove
+from os import getcwd, remove, listdir
 from os.path import splitext, basename, exists
 from random import randint
 
@@ -54,10 +55,19 @@ class MCUXpresso(GNUARMEclipse):
 
     MBED_CONFIG_HEADER_SUPPORTED = True
 
+    @staticmethod
+    def is_target_name_in_dir(path, target_name):
+        # toos/export/mcuxpresso/ has entries with
+        # both lower and upper case. Handle these inconsistencies.
+        for entry in listdir(path):
+            if(re.match(entry, target_name + '_cproject.tmpl', re.IGNORECASE)):
+                return True
+        return False
+
     @classmethod
     def is_target_supported(cls, target_name):
-        # targes suppoerted when .cproject templatefile exists
-        if exists(cls.TEMPLATE_DIR + '/mcuxpresso/' + target_name + '_cproject.tmpl'):
+        # target is supported when *_cproject.tmpl template file exists
+        if MCUXpresso.is_target_name_in_dir(cls.TEMPLATE_DIR + '/mcuxpresso/', target_name):
             target = TARGET_MAP[target_name]
             return apply_supported_whitelist(
                 cls.TOOLCHAIN, POST_BINARY_WHITELIST, target)
@@ -82,7 +92,6 @@ class MCUXpresso(GNUARMEclipse):
         for lib in self.libraries:
             l, _ = splitext(basename(lib))
             libraries.append(l[3:])
-        self.libraries = libraries
 
         self.system_libraries = [
             'stdc++', 'supc++', 'm', 'c', 'gcc', 'nosys'
@@ -156,7 +165,7 @@ class MCUXpresso(GNUARMEclipse):
             else:
                 opts['parent_id'] = 'release'
 
-            self.process_options(opts, flags)
+            self.process_options(opts, flags, libraries)
 
             opts['as']['defines'] = self.as_defines
             opts['c']['defines'] = self.c_defines
@@ -171,7 +180,7 @@ class MCUXpresso(GNUARMEclipse):
                 self.filter_dot(s) for s in self.resources.lib_dirs]
 
             opts['ld']['object_files'] = objects
-            opts['ld']['user_libraries'] = self.libraries
+            opts['ld']['user_libraries'] = libraries
             opts['ld']['system_libraries'] = self.system_libraries
             opts['ld']['script'] = "linker-script-%s.ld" % id
             opts['cpp_cmd'] = " ".join(toolchain.preproc)
@@ -305,7 +314,7 @@ class MCUXpresso(GNUARMEclipse):
 
     # -------------------------------------------------------------------------
 
-    def process_options(self, opts, flags_in):
+    def process_options(self, opts, flags_in, libraries):
         """
         CDT managed projects store lots of build options in separate
         variables, with separate IDs in the .cproject file.
@@ -701,7 +710,7 @@ class MCUXpresso(GNUARMEclipse):
             opts['ld'][
                 'other'] += ' '.join('-l' + s for s in self.system_libraries) + ' '
             opts['ld'][
-                'other'] += ' '.join('-l' + s for s in self.libraries)
+                'other'] += ' '.join('-l' + s for s in libraries)
             opts['ld']['other'] += ' -Wl,--end-group '
 
         # Strip all 'other' flags, since they might have leading spaces.

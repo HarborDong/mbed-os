@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2017, Arm Limited and affiliates.
+ * Copyright (c) 2014-2018, Arm Limited and affiliates.
  * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -35,7 +35,7 @@ void pana_reset_client_session(void);
 
 
 /* Allocate Pana Parameters */
-struct nwk_pana_params * pana_client_parameter_allocate(void);
+struct nwk_pana_params *pana_client_parameter_allocate(void);
 /* Define Key material */
 uint8_t *pana_key_get(const uint8_t *key);
 

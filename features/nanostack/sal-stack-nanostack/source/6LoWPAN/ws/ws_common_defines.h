@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2018, Arm Limited and affiliates.
+ * Copyright (c) 2018-2019, Arm Limited and affiliates.
  * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -27,6 +27,7 @@
 #define WH_IE_RSL_TYPE              4   /**< Received Signal Level information */
 #define WH_IE_MHDS_TYPE             5   /**< MHDS information for mesh routing */
 #define WH_IE_VH_TYPE               6   /**< Vendor header information */
+#define WH_IE_EA_TYPE               9   /**< Eapol Auhtenticator EUI-64 header information */
 
 #define WS_WP_NESTED_IE             4 /**< WS nested Payload IE element'selement could include mltiple sub payload IE */
 
@@ -58,9 +59,9 @@ typedef struct ws_pan_information_s {
     uint16_t pan_size;          /**< Number devices connected to Border Router. */
     uint16_t routing_cost;      /**< ETX to border Router. */
     uint16_t pan_version;       /**< Pan configuration version will be updatd by Border router at PAN. */
-    bool use_parent_bs:1;       /**< 1 for force to follow parent broadcast schedule. 0 node may define own schedule. */
-    bool rpl_routing_method:1;  /**< 1 when RPL routing is selected and 0 when L2 routing. */
-    unsigned version:3;         /**< Pan version support. */
+    bool use_parent_bs: 1;      /**< 1 for force to follow parent broadcast schedule. 0 node may define own schedule. */
+    bool rpl_routing_method: 1; /**< 1 when RPL routing is selected and 0 when L2 routing. */
+    unsigned version: 3;        /**< Pan version support. */
 } ws_pan_information_t;
 
 /**
@@ -73,12 +74,14 @@ typedef struct ws_hopping_schedule_s {
     uint8_t operating_class;            /**< PHY operating class default to 1 */
     uint8_t operating_mode;             /**< PHY operating mode default to "1b" symbol rate 50, modulation index 1 */
     uint8_t channel_plan;               /**< 0: use regulatory domain values 1: application defined plan */
-    uint8_t channel_function;           /**< 0: Fixed channel, 1:TR51CF, 2: Direct Hash, 3: Vendor defined */
+    uint8_t uc_channel_function;        /**< 0: Fixed channel, 1:TR51CF, 2: Direct Hash, 3: Vendor defined */
+    uint8_t bc_channel_function;        /**< 0: Fixed channel, 1:TR51CF, 2: Direct Hash, 3: Vendor defined */
     uint8_t channel_spacing;            /**< derived from regulatory domain. 0:200k, 1:400k, 2:600k, 3:100k */
     uint8_t number_of_channels;         /**< derived from regulatory domain */
     uint8_t clock_drift;
     uint8_t timing_accurancy;
-    uint16_t fixed_channel;
+    uint16_t uc_fixed_channel;
+    uint16_t bc_fixed_channel;
     uint16_t fhss_bsi;
     uint32_t fhss_broadcast_interval;
     uint32_t channel_mask[8];
@@ -115,7 +118,7 @@ typedef struct ws_channel_plan_zero {
  */
 typedef struct ws_channel_plan_one {
     uint_fast24_t ch0;
-    unsigned channel_spacing:4;
+    unsigned channel_spacing: 4;
     uint16_t number_of_channel;
 } ws_channel_plan_one_t;
 
@@ -141,9 +144,9 @@ typedef struct ws_us_ie {
     uint8_t dwell_interval;
     uint8_t clock_drift;
     uint8_t timing_accurancy;
-    unsigned channel_plan:3;
-    unsigned channel_function:3;
-    unsigned excluded_channel_ctrl:2;
+    unsigned channel_plan: 3;
+    unsigned channel_function: 3;
+    unsigned excluded_channel_ctrl: 2;
     union {
         ws_channel_plan_zero_t zero;
         ws_channel_plan_one_t one;
@@ -163,9 +166,9 @@ typedef struct ws_bs_ie {
     uint8_t dwell_interval;
     uint8_t clock_drift;
     uint8_t timing_accurancy;
-    unsigned channel_plan:3;
-    unsigned channel_function:3;
-    unsigned excluded_channel_ctrl:2;
+    unsigned channel_plan: 3;
+    unsigned channel_function: 3;
+    unsigned excluded_channel_ctrl: 2;
     union {
         ws_channel_plan_zero_t zero;
         ws_channel_plan_one_t one;
@@ -182,8 +185,39 @@ typedef struct ws_bs_ie {
 
 #define WS_FAN_VERSION_1_0 1
 
-#define WS_NEIGHBOR_LINK_TIMEOUT 240
+#define WS_NEIGHBOR_LINK_TIMEOUT 2200
+#define WS_NEIGHBOR_TEMPORARY_LINK_MIN_TIMEOUT_LARGE 520
+#define WS_NEIGHBOR_TEMPORARY_LINK_MIN_TIMEOUT_SMALL 260
 #define WS_NEIGHBOR_NUD_TIMEOUT WS_NEIGHBOR_LINK_TIMEOUT / 2
+
+#define WS_NEIGBOR_ETX_SAMPLE_MAX 3
+#define WS_NEIGHBOUR_MAX_CANDIDATE_PROBE 5
+
+#define WS_PROBE_INIT_BASE_SECONDS 8
+
+#define WS_NUD_RAND_PROBABILITY 1
+
+#define WS_NUD_RANDOM_SAMPLE_LENGTH WS_NEIGHBOR_NUD_TIMEOUT / 2
+
+#define WS_NUD_RANDOM_COMPARE (WS_NUD_RAND_PROBABILITY*WS_NUD_RANDOM_SAMPLE_LENGTH) / 100
+
+#define WS_ETX_MIN_SAMPLE_COUNT 4
+
+#define WS_ETX_MAX_UPDATE 1024
+
+#define WS_ETX_MIN_WAIT_TIME 60
+
+#define WS_RPL_PARENT_CANDIDATE_MAX 5
+#define WS_RPL_SELECTED_PARENT_MAX 2
+
+#define WS_CERTIFICATE_RPL_PARENT_CANDIDATE_MAX 8
+#define WS_CERTIFICATE_RPL_SELECTED_PARENT_MAX 3
+
+/**
+ * Wi-sun spesific non-preferred prefix policy label
+ */
+
+#define WS_NON_PREFFRED_LABEL 36
 
 /*
  * Threshold (referenced to DEVICE_MIN_SENS) above which a neighbor node may be considered for inclusion into candidate parent set
@@ -202,5 +236,34 @@ typedef struct ws_bs_ie {
  * value when send subsequent RPL DIS in 100 ms tics. Value is randomized between timeout/2 - timeout
  */
 #define WS_RPL_DIS_TIMEOUT 1800
+
+/*
+ * MAC Ack wait duration in symbols. 2-FSK modulation used -> 1 bit per symbol.
+ */
+#define WS_ACK_WAIT_SYMBOLS    800
+
+/*
+ * Tack max time in milliseconds.
+ */
+#define WS_TACK_MAX_MS 5
+
+// With FHSS we need to check CCA twice on TX channel
+#define WS_NUMBER_OF_CSMA_PERIODS  2
+// Interval between two CCA checks
+#define WS_CSMA_MULTI_CCA_INTERVAL 1000
+
+/* Default FHSS timing information
+ *
+ */
+#define WS_FHSS_UC_DWELL_INTERVAL     255;
+#define WS_FHSS_BC_INTERVAL           1020;
+#define WS_FHSS_BC_DWELL_INTERVAL     255;
+
+/*
+ * EAPOL relay and PAE authenticator socket settings
+ */
+#define EAPOL_RELAY_SOCKET_PORT               10253
+#define BR_EAPOL_RELAY_SOCKET_PORT            10255
+#define PAE_AUTH_SOCKET_PORT                  10254
 
 #endif /* WS_COMMON_DEFINES_H_ */

@@ -1,5 +1,5 @@
 /* mbed Microcontroller Library
- * Copyright (c) 2006-2012 ARM Limited
+ * Copyright (c) 2006-2019 ARM Limited
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -23,16 +23,16 @@
 #define MUTEX_H
 
 #include <stdint.h>
-#include "cmsis_os2.h"
-#include "mbed_rtos1_types.h"
-#include "mbed_rtos_storage.h"
+#include "rtos/mbed_rtos_types.h"
+#include "rtos/mbed_rtos1_types.h"
+#include "rtos/mbed_rtos_storage.h"
 
 #include "platform/NonCopyable.h"
 #include "platform/ScopedLock.h"
 #include "platform/mbed_toolchain.h"
 
 namespace rtos {
-/** \addtogroup rtos */
+/** \addtogroup rtos-public-api */
 /** @{*/
 
 class Mutex;
@@ -52,15 +52,17 @@ typedef mbed::ScopedLock<Mutex> ScopedMutexLock;
  * \defgroup rtos_Mutex Mutex class
  * @{
  */
- 
+
 /** The Mutex class is used to synchronize the execution of threads.
- This is for example used to protect access to a shared resource.
+ This is, for example, used to protect access to a shared resource.
+
+ In bare-metal builds, the Mutex class is a dummy, so lock() and unlock() are no-ops.
 
  @note You cannot use member functions of this class in ISR context. If you require Mutex functionality within
  ISR handler, consider using @a Semaphore.
 
  @note
- Memory considerations: The mutex control structures will be created on current thread's stack, both for the Mbed OS
+ Memory considerations: The mutex control structures are created on the current thread's stack, both for the Mbed OS
  and underlying RTOS objects (static or dynamic RTOS memory pools are not being used).
 */
 class Mutex : private mbed::NonCopyable<Mutex> {
@@ -85,24 +87,28 @@ public:
                @a osOK the mutex has been obtained.
 
       @note You cannot call this function from ISR context.
-      @note This function treats RTOS errors as fatal system errors, so can only return osOK.
+      @note This function treats RTOS errors as fatal system errors, so it can only return osOK.
             Use of the return value is deprecated, as the return is expected to become void in the future.
      */
-    osStatus lock(void);
+#if MBED_CONF_RTOS_PRESENT
+    osStatus lock();
+#else
+    void lock(); // Value return backwards compatibility not required for non-RTOS
+#endif
 
     /**
-      For backwards compatibility.
+      Wait until a Mutex becomes available.
+
       @deprecated Do not use this function. This function has been replaced with lock(), trylock() and trylock_for() functions.
 
-      Wait until a Mutex becomes available.
-      @param   millisec  timeout value or 0 in case of no time-out.
+      @param   millisec  timeout value.
       @return  status code that indicates the execution status of the function:
                @a osOK the mutex has been obtained.
                @a osErrorTimeout the mutex could not be obtained in the given time.
                @a osErrorResource the mutex could not be obtained when no timeout was specified.
 
       @note You cannot call this function from ISR context.
-      @note This function treats RTOS errors as fatal system errors, so can only return osOK or
+      @note This function treats RTOS errors as fatal system errors, so it can only return osOK or
             osErrorResource in case when millisec is 0 or osErrorTimeout if millisec is not osWaitForever.
      */
     MBED_DEPRECATED_SINCE("mbed-os-5.10.0", "Replaced with lock(), trylock() and trylock_for() functions")
@@ -117,7 +123,7 @@ public:
     bool trylock();
 
     /** Try to lock the mutex for a specified time
-      @param   millisec  timeout value or 0 in case of no time-out.
+      @param   millisec  timeout value.
       @return true if the mutex was acquired, false otherwise.
       @note the underlying RTOS may have a limit to the maximum wait time
             due to internal 32-bit computations, but this is guaranteed to work if the
@@ -147,17 +153,21 @@ public:
               @a osOK the mutex has been released.
 
       @note You cannot call this function from ISR context.
-      @note This function treats RTOS errors as fatal system errors, so can only return osOK.
+      @note This function treats RTOS errors as fatal system errors, so it can only return osOK.
             Use of the return value is deprecated, as the return is expected to become void in the future.
      */
+#if MBED_CONF_RTOS_PRESENT
     osStatus unlock();
+#else
+    void unlock(); // Value return backwards compatibility not required for non-RTOS
+#endif
 
     /** Get the owner the this mutex
       @return  the current owner of this mutex.
 
       @note You cannot call this function from ISR context.
      */
-    osThreadId get_owner();
+    osThreadId_t get_owner();
 
     /** Mutex destructor
      *
@@ -166,16 +176,54 @@ public:
     ~Mutex();
 
 private:
-    void constructor(const char *name = NULL);
+#if MBED_CONF_RTOS_PRESENT
+    void constructor(const char *name = nullptr);
     friend class ConditionVariable;
 
     osMutexId_t               _id;
     mbed_rtos_storage_mutex_t _obj_mem;
     uint32_t                  _count;
+#endif
 };
+
+#if !MBED_CONF_RTOS_PRESENT
+inline Mutex::Mutex()
+{
+}
+
+inline Mutex::Mutex(const char *)
+{
+}
+
+inline Mutex::~Mutex()
+{
+}
+
+inline void Mutex::lock()
+{
+}
+
+inline bool Mutex::trylock()
+{
+    return true;
+}
+
+inline bool Mutex::trylock_for(uint32_t)
+{
+    return true;
+}
+
+inline bool Mutex::trylock_until(uint64_t)
+{
+    return true;
+}
+
+inline void Mutex::unlock()
+{
+}
+#endif
+
 /** @}*/
 /** @}*/
 }
 #endif
-
-

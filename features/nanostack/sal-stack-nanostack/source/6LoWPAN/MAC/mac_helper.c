@@ -29,7 +29,7 @@
 
 #define TRACE_GROUP "MACh"
 
-static const uint8_t mac_helper_default_key_source[8] = {0xff,0,0,0,0,0,0,0};
+static const uint8_t mac_helper_default_key_source[8] = {0xff, 0, 0, 0, 0, 0, 0, 0};
 
 static uint8_t mac_helper_header_security_aux_header_length(uint8_t keyIdmode);
 static uint8_t mac_helper_security_mic_length_get(uint8_t security_level);
@@ -51,13 +51,13 @@ static int8_t mac_helper_pib_8bit_set(protocol_interface_info_entry_t *interface
             break;
     }
 
-    if (interface->mac_api && interface->mac_api->mlme_req ) {
+    if (interface->mac_api && interface->mac_api->mlme_req) {
         mlme_set_t set_req;
         set_req.attr = attribute;
         set_req.attr_index = 0;
         set_req.value_pointer = &value;
         set_req.value_size = 1;
-        interface->mac_api->mlme_req(interface->mac_api,MLME_SET , &set_req);
+        interface->mac_api->mlme_req(interface->mac_api, MLME_SET, &set_req);
     }
 
     return 0;
@@ -65,7 +65,7 @@ static int8_t mac_helper_pib_8bit_set(protocol_interface_info_entry_t *interface
 
 void mac_create_scan_request(mac_scan_type_t type, channel_list_s *chanlist, uint8_t scan_duration, mlme_scan_t *request)
 {
-    if( !chanlist || !request ){
+    if (!chanlist || !request) {
         return;
     }
 
@@ -93,7 +93,7 @@ nwk_pan_descriptor_t *mac_helper_select_best_lqi(nwk_pan_descriptor_t *list)
 
 void mac_helper_drop_selected_from_the_scanresult(nwk_scan_params_t *scanParams, nwk_pan_descriptor_t *selected)
 {
-    if( !scanParams || !selected ){
+    if (!scanParams || !selected) {
         return;
     }
     nwk_pan_descriptor_t *cur;
@@ -122,7 +122,7 @@ void mac_helper_drop_selected_from_the_scanresult(nwk_scan_params_t *scanParams,
 
 void mac_helper_free_scan_confirm(nwk_scan_params_t *params)
 {
-    if( !params ){
+    if (!params) {
         return;
     }
     if (params->nwk_scan_res_size) {
@@ -142,7 +142,7 @@ void mac_helper_free_scan_confirm(nwk_scan_params_t *params)
     params->nwk_cur_active = mac_helper_free_pan_descriptions(params->nwk_cur_active);
 }
 
-nwk_pan_descriptor_t * mac_helper_free_pan_descriptions(nwk_pan_descriptor_t *nwk_cur_active)
+nwk_pan_descriptor_t *mac_helper_free_pan_descriptions(nwk_pan_descriptor_t *nwk_cur_active)
 {
     if (nwk_cur_active) {
         ns_dyn_mem_free(nwk_cur_active->pan_descriptor);
@@ -154,7 +154,7 @@ nwk_pan_descriptor_t * mac_helper_free_pan_descriptions(nwk_pan_descriptor_t *nw
 
 int8_t mac_helper_nwk_id_filter_set(const uint8_t *nw_id, nwk_filter_params_s *filter)
 {
-    if( !filter ){
+    if (!filter) {
         return -1;
     }
     int8_t ret_val = 0;
@@ -182,7 +182,7 @@ void mac_helper_panid_set(protocol_interface_info_entry_t *interface, uint16_t p
     set_req.attr_index = 0;
     set_req.value_pointer = &panId;
     set_req.value_size = 2;
-    interface->mac_api->mlme_req(interface->mac_api,MLME_SET , &set_req);
+    interface->mac_api->mlme_req(interface->mac_api, MLME_SET, &set_req);
 }
 
 void mac_helper_mac16_address_set(protocol_interface_info_entry_t *interface, uint16_t mac16)
@@ -198,13 +198,13 @@ void mac_helper_mac16_address_set(protocol_interface_info_entry_t *interface, ui
     set_req.attr_index = 0;
     set_req.value_pointer = &mac16;
     set_req.value_size = 2;
-    interface->mac_api->mlme_req(interface->mac_api,MLME_SET , &set_req);
+    interface->mac_api->mlme_req(interface->mac_api, MLME_SET, &set_req);
 }
 
 uint16_t mac_helper_mac16_address_get(const protocol_interface_info_entry_t *interface)
 {
     uint16_t shortAddress = 0xfffe;
-    if (interface ) {
+    if (interface) {
         shortAddress = interface->mac_parameters->mac_short_address;
     }
     return shortAddress;
@@ -233,14 +233,14 @@ void mac_helper_set_default_key_source(protocol_interface_info_entry_t *interfac
 {
     mlme_set_t set_req;
     set_req.attr_index = 0;
-    set_req.value_pointer = (void*)mac_helper_default_key_source;
+    set_req.value_pointer = (void *)mac_helper_default_key_source;
     set_req.value_size = 8;
     //Set first default key source
     set_req.attr = macDefaultKeySource;
-    interface->mac_api->mlme_req(interface->mac_api,MLME_SET , &set_req);
+    interface->mac_api->mlme_req(interface->mac_api, MLME_SET, &set_req);
     //Set first default key source
     set_req.attr = macAutoRequestKeySource;
-    interface->mac_api->mlme_req(interface->mac_api,MLME_SET , &set_req);
+    interface->mac_api->mlme_req(interface->mac_api, MLME_SET, &set_req);
 
 }
 
@@ -252,7 +252,7 @@ void mac_helper_default_security_level_set(protocol_interface_info_entry_t *inte
     } else {
         security_enabled = false;
     }
-    mac_helper_pib_8bit_set(interface,macAutoRequestSecurityLevel,  securityLevel);
+    mac_helper_pib_8bit_set(interface, macAutoRequestSecurityLevel,  securityLevel);
     mac_helper_pib_boolean_set(interface, macSecurityEnabled, security_enabled);
 
 }
@@ -264,7 +264,7 @@ uint8_t mac_helper_default_security_level_get(protocol_interface_info_entry_t *i
 
 void mac_helper_default_security_key_id_mode_set(protocol_interface_info_entry_t *interface, uint8_t keyIdMode)
 {
-    mac_helper_pib_8bit_set(interface,macAutoRequestKeyIdMode,  keyIdMode);
+    mac_helper_pib_8bit_set(interface, macAutoRequestKeyIdMode,  keyIdMode);
 }
 
 uint8_t mac_helper_default_security_key_id_mode_get(protocol_interface_info_entry_t *interface)
@@ -280,7 +280,8 @@ static void mac_helper_key_lookup_set(mlme_key_id_lookup_descriptor_t *lookup, u
 }
 
 
-static void mac_helper_keytable_descriptor_set(struct mac_api_s *api, const uint8_t *key, uint8_t id, uint8_t attribute_id) {
+static void mac_helper_keytable_descriptor_set(struct mac_api_s *api, const uint8_t *key, uint8_t id, uint8_t attribute_id)
+{
     mlme_set_t set_req;
     mlme_key_id_lookup_descriptor_t lookup_description;
     mlme_key_descriptor_entry_t key_description;
@@ -301,7 +302,8 @@ static void mac_helper_keytable_descriptor_set(struct mac_api_s *api, const uint
     api->mlme_req(api, MLME_SET, &set_req);
 }
 
-static void mac_helper_keytable_pairwise_descriptor_set(struct mac_api_s *api, const uint8_t *key, const uint8_t *mac64, uint8_t attribute_id) {
+static void mac_helper_keytable_pairwise_descriptor_set(struct mac_api_s *api, const uint8_t *key, const uint8_t *mac64, uint8_t attribute_id)
+{
     mlme_set_t set_req;
     mlme_key_id_lookup_descriptor_t lookup_description;
     mlme_key_descriptor_entry_t key_description;
@@ -309,7 +311,7 @@ static void mac_helper_keytable_pairwise_descriptor_set(struct mac_api_s *api, c
         memcpy(lookup_description.LookupData, mac64, 8);
         lookup_description.LookupData[8] = 0;
         lookup_description.LookupDataSize = 1;
-        tr_debug("Key add %u index %s", attribute_id,trace_array(lookup_description.LookupData, 9));
+        tr_debug("Key add %u index %s", attribute_id, trace_array(lookup_description.LookupData, 9));
         memset(&key_description, 0, sizeof(mlme_key_descriptor_entry_t));
         memcpy(key_description.Key, key, 16);
         key_description.KeyIdLookupList = &lookup_description;
@@ -322,7 +324,7 @@ static void mac_helper_keytable_pairwise_descriptor_set(struct mac_api_s *api, c
     set_req.value_pointer = &key_description;
     set_req.value_size = sizeof(mlme_key_descriptor_entry_t);
 
-    api->mlme_req(api,MLME_SET , &set_req);
+    api->mlme_req(api, MLME_SET, &set_req);
 }
 
 
@@ -332,8 +334,28 @@ int8_t mac_helper_security_default_key_set(protocol_interface_info_entry_t *inte
         return -1;
     }
 
-    mac_helper_pib_8bit_set(interface,macAutoRequestKeyIndex, id);
+    mac_helper_pib_8bit_set(interface, macAutoRequestKeyIndex, id);
     mac_helper_keytable_descriptor_set(interface->mac_api, key, id, interface->mac_parameters->mac_default_key_attribute_id);
+    return 0;
+}
+
+int8_t mac_helper_security_default_recv_key_set(protocol_interface_info_entry_t *interface, const uint8_t *key, uint8_t id, uint8_t keyid_mode)
+{
+    if (id == 0 || keyid_mode > 3) {
+        return -1;
+    }
+
+    mac_helper_keytable_descriptor_set(interface->mac_api, key, id, interface->mac_parameters->mac_default_key_attribute_id);
+    return 0;
+}
+
+int8_t mac_helper_security_auto_request_key_index_set(protocol_interface_info_entry_t *interface, uint8_t key_attibute_index, uint8_t id)
+{
+    if (id == 0) {
+        return -1;
+    }
+    interface->mac_parameters->mac_default_key_attribute_id = key_attibute_index;
+    mac_helper_pib_8bit_set(interface, macAutoRequestKeyIndex, id);
     return 0;
 }
 
@@ -372,6 +394,33 @@ int8_t mac_helper_security_prev_key_set(protocol_interface_info_entry_t *interfa
 
 }
 
+int8_t mac_helper_security_key_to_descriptor_set(protocol_interface_info_entry_t *interface, const uint8_t *key, uint8_t id, uint8_t descriptor)
+{
+    if (id == 0) {
+        return -1;
+    }
+
+    mac_helper_keytable_descriptor_set(interface->mac_api, key, id, descriptor);
+    return 0;
+}
+
+int8_t mac_helper_security_key_descriptor_clear(protocol_interface_info_entry_t *interface, uint8_t descriptor)
+{
+    if (!interface->mac_api) {
+        return -1;
+    }
+
+    mlme_set_t set_req;
+    mlme_key_descriptor_entry_t key_description;
+    memset(&key_description, 0, sizeof(mlme_key_descriptor_entry_t));
+
+    set_req.attr = macKeyTable;
+    set_req.value_pointer = &key_description;
+    set_req.value_size = sizeof(mlme_key_descriptor_entry_t);
+    set_req.attr_index = descriptor;
+    interface->mac_api->mlme_req(interface->mac_api, MLME_SET, &set_req);
+    return 0;
+}
 
 void mac_helper_security_key_swap_next_to_default(protocol_interface_info_entry_t *interface)
 {
@@ -393,17 +442,16 @@ void mac_helper_security_key_swap_next_to_default(protocol_interface_info_entry_
     interface->mac_parameters->mac_prev_key_index = interface->mac_parameters->mac_default_key_index;
     interface->mac_parameters->mac_prev_key_attribute_id = interface->mac_parameters->mac_default_key_attribute_id;
 
-    interface->mac_parameters->mac_default_key_index = interface->mac_parameters->mac_next_key_index;
-    interface->mac_parameters->mac_default_key_attribute_id = interface->mac_parameters->mac_next_key_attribute_id;
+    mac_helper_security_auto_request_key_index_set(interface, interface->mac_parameters->mac_next_key_attribute_id, interface->mac_parameters->mac_next_key_index);
+
     interface->mac_parameters->mac_next_key_index = 0;
     interface->mac_parameters->mac_next_key_attribute_id = prev_attribute;
 
-    mac_helper_pib_8bit_set(interface,macAutoRequestKeyIndex,  interface->mac_parameters->mac_default_key_index);
-
 }
 
-void mac_helper_security_key_clean(protocol_interface_info_entry_t *interface) {
-    if (interface->mac_api ) {
+void mac_helper_security_key_clean(protocol_interface_info_entry_t *interface)
+{
+    if (interface->mac_api) {
         mlme_set_t set_req;
         mlme_key_descriptor_entry_t key_description;
         memset(&key_description, 0, sizeof(mlme_key_descriptor_entry_t));
@@ -413,11 +461,11 @@ void mac_helper_security_key_clean(protocol_interface_info_entry_t *interface) {
         set_req.value_pointer = &key_description;
         set_req.value_size = sizeof(mlme_key_descriptor_entry_t);
         set_req.attr_index = interface->mac_parameters->mac_prev_key_attribute_id;
-        interface->mac_api->mlme_req(interface->mac_api,MLME_SET , &set_req);
+        interface->mac_api->mlme_req(interface->mac_api, MLME_SET, &set_req);
         set_req.attr_index = interface->mac_parameters->mac_default_key_attribute_id;
-        interface->mac_api->mlme_req(interface->mac_api,MLME_SET , &set_req);
+        interface->mac_api->mlme_req(interface->mac_api, MLME_SET, &set_req);
         set_req.attr_index = interface->mac_parameters->mac_next_key_attribute_id;
-        interface->mac_api->mlme_req(interface->mac_api,MLME_SET , &set_req);
+        interface->mac_api->mlme_req(interface->mac_api, MLME_SET, &set_req);
     }
     interface->mac_parameters->mac_prev_key_index = 0;
     interface->mac_parameters->mac_default_key_index = 0;
@@ -445,7 +493,7 @@ void mac_helper_coordinator_address_set(protocol_interface_info_entry_t *interfa
     }
 
     if (interface->mac_api) {
-        interface->mac_api->mlme_req(interface->mac_api, MLME_SET , &set_req);
+        interface->mac_api->mlme_req(interface->mac_api, MLME_SET, &set_req);
     }
 }
 
@@ -457,10 +505,10 @@ addrtype_t mac_helper_coordinator_address_get(protocol_interface_info_entry_t *i
     }
 
     if (interface->mac_parameters->mac_cordinator_info.cord_adr_mode == MAC_ADDR_MODE_16_BIT) {
-        memcpy(adr_ptr,interface->mac_parameters->mac_cordinator_info.mac_mlme_coord_address, 2);
+        memcpy(adr_ptr, interface->mac_parameters->mac_cordinator_info.mac_mlme_coord_address, 2);
         ret = ADDR_802_15_4_SHORT;
     } else if (interface->mac_parameters->mac_cordinator_info.cord_adr_mode == MAC_ADDR_MODE_64_BIT) {
-        memcpy(adr_ptr,interface->mac_parameters->mac_cordinator_info.mac_mlme_coord_address, 8);
+        memcpy(adr_ptr, interface->mac_parameters->mac_cordinator_info.mac_mlme_coord_address, 8);
         ret = ADDR_802_15_4_LONG;
     }
     return ret;
@@ -476,7 +524,7 @@ static void mac_helper_beacon_payload_length_set_to_mac(protocol_interface_info_
         set_req.attr_index = 0;
         set_req.value_pointer = &len;
         set_req.value_size = 1;
-        interface->mac_api->mlme_req(interface->mac_api,MLME_SET , &set_req);
+        interface->mac_api->mlme_req(interface->mac_api, MLME_SET, &set_req);
     }
 }
 
@@ -488,7 +536,7 @@ static void mac_helper_beacon_payload_set_to_mac(protocol_interface_info_entry_t
         set_req.attr_index = 0;
         set_req.value_pointer = payload;
         set_req.value_size = length;
-        interface->mac_api->mlme_req(interface->mac_api,MLME_SET , &set_req);
+        interface->mac_api->mlme_req(interface->mac_api, MLME_SET, &set_req);
     }
 }
 
@@ -501,13 +549,13 @@ uint8_t *mac_helper_beacon_payload_reallocate(protocol_interface_info_entry_t *i
     if (len == interface->mac_parameters->mac_beacon_payload_size) {
         // no change to size, return the existing buff
         //Set allways length to zero for safe beacon payload manipulate
-        mac_helper_beacon_payload_length_set_to_mac(interface,0);
+        mac_helper_beacon_payload_length_set_to_mac(interface, 0);
         return interface->mac_parameters->mac_beacon_payload;
     }
 
     if (len == 0) {
         //SET MAC beacon payload to length to zero
-        mac_helper_beacon_payload_length_set_to_mac(interface,0);
+        mac_helper_beacon_payload_length_set_to_mac(interface, 0);
         ns_dyn_mem_free(interface->mac_parameters->mac_beacon_payload);
         interface->mac_parameters->mac_beacon_payload = NULL;
         interface->mac_parameters->mac_beacon_payload_size = 0;
@@ -516,7 +564,7 @@ uint8_t *mac_helper_beacon_payload_reallocate(protocol_interface_info_entry_t *i
 
     tr_debug("mac_helper_beacon_payload_reallocate, old len: %d, new: %d", interface->mac_parameters->mac_beacon_payload_size, len);
 
-    uint8_t* temp_buff = ns_dyn_mem_alloc(len);
+    uint8_t *temp_buff = ns_dyn_mem_alloc(len);
 
     if (temp_buff == NULL) {
         // no need to proceed, could not allocate more space
@@ -524,7 +572,7 @@ uint8_t *mac_helper_beacon_payload_reallocate(protocol_interface_info_entry_t *i
     }
 
     //SET MAC beacon payload to length to zero
-    mac_helper_beacon_payload_length_set_to_mac(interface,0);
+    mac_helper_beacon_payload_length_set_to_mac(interface, 0);
 
     // copy data into new buffer before freeing old one
     if (interface->mac_parameters->mac_beacon_payload_size > 0) {
@@ -610,7 +658,7 @@ int8_t mac_helper_pib_boolean_set(protocol_interface_info_entry_t *interface, ml
         set_req.attr_index = 0;
         set_req.value_pointer = &value;
         set_req.value_size = sizeof(bool);
-        interface->mac_api->mlme_req(interface->mac_api,MLME_SET , &set_req);
+        interface->mac_api->mlme_req(interface->mac_api, MLME_SET, &set_req);
     }
 
     return 0;
@@ -622,13 +670,13 @@ int8_t mac_helper_mac_channel_set(protocol_interface_info_entry_t *interface, ui
     if (interface->mac_parameters->mac_channel != new_channel) {
 
         interface->mac_parameters->mac_channel = new_channel;
-        if (interface->mac_api && interface->mac_api->mlme_req ) {
+        if (interface->mac_api && interface->mac_api->mlme_req) {
             mlme_set_t set_req;
             set_req.attr = phyCurrentChannel;
             set_req.attr_index = 0;
             set_req.value_pointer = &new_channel;
             set_req.value_size = 1;
-            interface->mac_api->mlme_req(interface->mac_api,MLME_SET , &set_req);
+            interface->mac_api->mlme_req(interface->mac_api, MLME_SET, &set_req);
         }
     }
     return 0;
@@ -673,7 +721,7 @@ bool mac_helper_write_our_addr(protocol_interface_info_entry_t *interface, socka
 int8_t mac_helper_mac64_set(protocol_interface_info_entry_t *interface, const uint8_t *mac64)
 {
     memcpy(interface->mac, mac64, 8);
-    if (interface->mac_api ) {
+    if (interface->mac_api) {
         interface->mac_api->mac64_set(interface->mac_api, mac64);
     }
     return 0;
@@ -736,7 +784,8 @@ uint_fast8_t mac_helper_frame_overhead(protocol_interface_info_entry_t *cur, con
     return length;
 }
 
-static uint8_t mac_helper_security_mic_length_get(uint8_t security_level) {
+static uint8_t mac_helper_security_mic_length_get(uint8_t security_level)
+{
     uint8_t mic_length;
     switch (security_level) {
         case SEC_MIC32:
@@ -761,16 +810,17 @@ static uint8_t mac_helper_security_mic_length_get(uint8_t security_level) {
     return mic_length;
 }
 
-static uint8_t mac_helper_header_security_aux_header_length(uint8_t keyIdmode) {
+static uint8_t mac_helper_header_security_aux_header_length(uint8_t keyIdmode)
+{
 
     uint8_t header_length = 5; //Header + 32-bit counter
     switch (keyIdmode) {
         case MAC_KEY_ID_MODE_SRC8_IDX:
             header_length += 4; //64-bit key source first part
-            /* fall through  */
+        /* fall through  */
         case MAC_KEY_ID_MODE_SRC4_IDX:
             header_length += 4; //32-bit key source inline
-            /* fall through  */
+        /* fall through  */
         case MAC_KEY_ID_MODE_IDX:
             header_length += 1;
             break;
@@ -787,15 +837,9 @@ int8_t mac_helper_link_frame_counter_read(int8_t interface_id, uint32_t *seq_ptr
     if (!cur || !cur->mac_api || !seq_ptr) {
         return -1;
     }
-    mlme_get_t get_req;
-    get_req.attr = macFrameCounter;
-    get_req.attr_index = 0;
-    cur->mac_api->mlme_req(cur->mac_api, MLME_GET, &get_req);
-    *seq_ptr = cur->mac_parameters->security_frame_counter;
 
-    return 0;
+    return mac_helper_key_link_frame_counter_read(interface_id, seq_ptr, cur->mac_parameters->mac_default_key_attribute_id);
 }
-
 
 int8_t mac_helper_link_frame_counter_set(int8_t interface_id, uint32_t seq_ptr)
 {
@@ -804,9 +848,36 @@ int8_t mac_helper_link_frame_counter_set(int8_t interface_id, uint32_t seq_ptr)
     if (!cur || !cur->mac_api) {
         return -1;
     }
+
+    return mac_helper_key_link_frame_counter_set(interface_id, seq_ptr, cur->mac_parameters->mac_default_key_attribute_id);
+}
+
+int8_t mac_helper_key_link_frame_counter_read(int8_t interface_id, uint32_t *seq_ptr, uint8_t descriptor)
+{
+    protocol_interface_info_entry_t *cur = protocol_stack_interface_info_get_by_id(interface_id);
+
+    if (!cur || !cur->mac_api || !seq_ptr) {
+        return -1;
+    }
+    mlme_get_t get_req;
+    get_req.attr = macFrameCounter;
+    get_req.attr_index = descriptor;
+    cur->mac_api->mlme_req(cur->mac_api, MLME_GET, &get_req);
+    *seq_ptr = cur->mac_parameters->security_frame_counter;
+
+    return 0;
+}
+
+int8_t mac_helper_key_link_frame_counter_set(int8_t interface_id, uint32_t seq_ptr, uint8_t descriptor)
+{
+    protocol_interface_info_entry_t *cur = protocol_stack_interface_info_get_by_id(interface_id);
+
+    if (!cur || !cur->mac_api) {
+        return -1;
+    }
     mlme_set_t set_req;
     set_req.attr = macFrameCounter;
-    set_req.attr_index = 0;
+    set_req.attr_index = descriptor;
     set_req.value_pointer = &seq_ptr;
     set_req.value_size = 4;
     cur->mac_api->mlme_req(cur->mac_api, MLME_SET, &set_req);
@@ -814,7 +885,7 @@ int8_t mac_helper_link_frame_counter_set(int8_t interface_id, uint32_t seq_ptr)
     return 0;
 }
 
-void mac_helper_devicetable_remove(mac_api_t *mac_api, uint8_t attribute_index)
+void mac_helper_devicetable_remove(mac_api_t *mac_api, uint8_t attribute_index, uint8_t *mac64)
 {
     if (!mac_api) {
         return;
@@ -826,10 +897,10 @@ void mac_helper_devicetable_remove(mac_api_t *mac_api, uint8_t attribute_index)
 
     set_req.attr = macDeviceTable;
     set_req.attr_index = attribute_index;
-    set_req.value_pointer = (void*)&device_desc;
+    set_req.value_pointer = (void *)&device_desc;
     set_req.value_size = sizeof(mlme_device_descriptor_t);
-    tr_debug("unRegister Device");
-    mac_api->mlme_req(mac_api,MLME_SET , &set_req);
+    tr_debug("Unregister Device %u, mac64: %s", attribute_index, trace_array(mac64, 8));
+    mac_api->mlme_req(mac_api, MLME_SET, &set_req);
 }
 
 void mac_helper_device_description_write(protocol_interface_info_entry_t *cur, mlme_device_descriptor_t *device_desc, uint8_t *mac64, uint16_t mac16, uint32_t frame_counter, bool exempt)
@@ -856,10 +927,10 @@ void mac_helper_devicetable_set(const mlme_device_descriptor_t *device_desc, pro
     mlme_set_t set_req;
     set_req.attr = macDeviceTable;
     set_req.attr_index = attribute_index;
-    set_req.value_pointer = (void*)device_desc;
+    set_req.value_pointer = (void *)device_desc;
     set_req.value_size = sizeof(mlme_device_descriptor_t);
-    tr_debug("Register Device");
-    cur->mac_api->mlme_req(cur->mac_api,MLME_SET , &set_req);
+    tr_debug("Register Device %u, mac16 %x mac64: %s, %"PRIu32, attribute_index, device_desc->ShortAddress, trace_array(device_desc->ExtAddress, 8), device_desc->FrameCounter);
+    cur->mac_api->mlme_req(cur->mac_api, MLME_SET, &set_req);
 }
 
 
@@ -877,5 +948,22 @@ int8_t mac_helper_mac_mlme_max_retry_set(int8_t interface_id, uint8_t mac_retry_
     set_req.value_size = 1;
     cur->mac_api->mlme_req(cur->mac_api, MLME_SET, &set_req);
 
+    return 0;
+}
+
+
+int8_t mac_helper_mac_device_description_pan_id_update(int8_t interface_id, uint16_t pan_id)
+{
+    protocol_interface_info_entry_t *cur;
+    cur = protocol_stack_interface_info_get_by_id(interface_id);
+    if (!cur || !cur->mac_api) {
+        return -1;
+    }
+    mlme_set_t set_req;
+    set_req.attr = macDeviceDescriptionPanIDUpdate;
+    set_req.attr_index = 0;
+    set_req.value_pointer = &pan_id;
+    set_req.value_size = sizeof(pan_id);
+    cur->mac_api->mlme_req(cur->mac_api, MLME_SET, &set_req);
     return 0;
 }

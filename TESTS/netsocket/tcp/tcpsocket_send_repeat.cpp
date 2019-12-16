@@ -15,6 +15,7 @@
  * limitations under the License.
  */
 
+#if defined(MBED_CONF_RTOS_PRESENT)
 #include "mbed.h"
 #include "TCPSocket.h"
 #include "greentea-client/test_env.h"
@@ -26,13 +27,14 @@ using namespace utest::v1;
 
 void TCPSOCKET_SEND_REPEAT()
 {
+    SKIP_IF_TCP_UNSUPPORTED();
     TCPSocket sock;
     tcpsocket_connect_to_discard_srv(sock);
 
     int snd;
     Timer timer;
     static const char tx_buffer[] = {'h', 'e', 'l', 'l', 'o'};
-    for (int i = 0; i < 1000; i++) {
+    for (int i = 0; i < 100; i++) {
         snd = sock.send(tx_buffer, sizeof(tx_buffer));
         if (snd != sizeof(tx_buffer)) {
             TEST_FAIL();
@@ -42,3 +44,4 @@ void TCPSOCKET_SEND_REPEAT()
 
     TEST_ASSERT_EQUAL(NSAPI_ERROR_OK, sock.close());
 }
+#endif // defined(MBED_CONF_RTOS_PRESENT)

@@ -14,13 +14,13 @@
  * limitations under the License.
  */
 
-#ifdef DEVICE_FLASH
+#if DEVICE_FLASH
 
 #include "FlashIAPBlockDevice.h"
-#include "mbed_critical.h"
+#include "mbed_atomic.h"
+#include "mbed_error.h"
 
-#include "mbed.h"
-
+using namespace mbed;
 #include <inttypes.h>
 
 #define FLASHIAP_READ_SIZE 1
@@ -36,16 +36,13 @@
 #define DEBUG_PRINTF(...)
 #endif
 
-FlashIAPBlockDevice::FlashIAPBlockDevice()
-    : _flash(), _base(0), _size(0), _is_initialized(false), _init_ref_count(0)
+FlashIAPBlockDevice::FlashIAPBlockDevice(uint32_t address, uint32_t size)
+    : _flash(), _base(address), _size(size), _is_initialized(false), _init_ref_count(0)
 {
-    DEBUG_PRINTF("FlashIAPBlockDevice: %" PRIX32 " %" PRIX32 "\r\n", address, size);
-}
-
-FlashIAPBlockDevice::FlashIAPBlockDevice(uint32_t address, uint32_t)
-    : _flash(), _base(0), _size(0), _is_initialized(false), _init_ref_count(0)
-{
-
+    if ((address == 0xFFFFFFFF) || (size == 0)) {
+        MBED_ERROR(MBED_ERROR_INVALID_ARGUMENT,
+                   "Base address and size need to be set in flashiap-block-device configuration in order to use default constructor");
+    }
 }
 
 FlashIAPBlockDevice::~FlashIAPBlockDevice()
@@ -70,11 +67,27 @@ int FlashIAPBlockDevice::init()
     int ret = _flash.init();
 
     if (ret) {
+        core_util_atomic_decr_u32(&_init_ref_count, 1);
         return ret;
     }
 
-    _base = _flash.get_flash_start();
-    _size = _flash.get_flash_size();
+    if (_size + _base > _flash.get_flash_size() + _flash.get_flash_start()) {
+        core_util_atomic_decr_u32(&_init_ref_count, 1);
+        return BD_ERROR_DEVICE_ERROR;
+    }
+
+    if (_base < _flash.get_flash_start()) {
+        core_util_atomic_decr_u32(&_init_ref_count, 1);
+        return BD_ERROR_DEVICE_ERROR;
+    }
+
+    if (!_base) {
+        _base = _flash.get_flash_start();
+    }
+
+    if (!_size) {
+        _size = _flash.get_flash_size() - (_base - _flash.get_flash_start());
+    }
 
     _is_initialized = true;
     return ret;
@@ -217,6 +230,20 @@ bd_size_t FlashIAPBlockDevice::get_erase_size(bd_addr_t addr) const
     return erase_size;
 }
 
+int FlashIAPBlockDevice::get_erase_value() const
+{
+    if (!_is_initialized) {
+        return -1;
+    }
+
+    uint8_t erase_val = _flash.get_erase_value();
+
+    DEBUG_PRINTF("get_erase_value: %" PRIX8 "\r\n", erase_val);
+
+    return erase_val;
+}
+
+
 bd_size_t FlashIAPBlockDevice::size() const
 {
     DEBUG_PRINTF("size: %" PRIX64 "\r\n", _size);
@@ -224,4 +251,19 @@ bd_size_t FlashIAPBlockDevice::size() const
     return _size;
 }
 
+const char *FlashIAPBlockDevice::get_type() const
+{
+    return "FLASHIAP";
+}
+
+bool FlashIAPBlockDevice::is_valid_erase(bd_addr_t addr, bd_size_t size) const
+{
+    /* Calculate address alignment for the full flash */
+    bd_addr_t base_addr = addr + (_base - _flash.get_flash_start());
+
+    return (
+               addr + size <= this->size() &&
+               base_addr % get_erase_size(addr) == 0 &&
+               (base_addr + size) % get_erase_size(addr + size - 1) == 0);
+}
 #endif /* DEVICE_FLASH */

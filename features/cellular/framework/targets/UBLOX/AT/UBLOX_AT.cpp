@@ -16,44 +16,187 @@
  */
 
 #include "UBLOX_AT.h"
-#include "UBLOX_AT_CellularNetwork.h"
-#include "UBLOX_AT_CellularPower.h"
 
 using namespace mbed;
 using namespace events;
 
-UBLOX_AT::UBLOX_AT(EventQueue &queue) : AT_CellularDevice(queue)
+#ifdef UBX_MDM_SARA_R41XM
+static const intptr_t cellular_properties[AT_CellularDevice::PROPERTY_MAX] = {
+    AT_CellularNetwork::RegistrationModeDisable,// C_EREG
+    AT_CellularNetwork::RegistrationModeLAC,    // C_GREG
+    AT_CellularNetwork::RegistrationModeLAC,    // C_REG
+    0,  // AT_CGSN_WITH_TYPE
+    0,  // AT_CGDATA
+    0,  // AT_CGAUTH
+    1,  // AT_CNMI
+    1,  // AT_CSMP
+    1,  // AT_CMGF
+    0,  // AT_CSDH
+    1,  // PROPERTY_IPV4_STACK
+    0,  // PROPERTY_IPV6_STACK
+    0,  // PROPERTY_IPV4V6_STACK
+    0,  // PROPERTY_NON_IP_PDP_TYPE
+    1,  // PROPERTY_AT_CGEREP
+};
+#elif defined(UBX_MDM_SARA_U2XX) || defined(UBX_MDM_SARA_G3XX)
+static const intptr_t cellular_properties[AT_CellularDevice::PROPERTY_MAX] = {
+    AT_CellularNetwork::RegistrationModeDisable,// C_EREG
+    AT_CellularNetwork::RegistrationModeLAC,    // C_GREG
+    AT_CellularNetwork::RegistrationModeLAC,    // C_REG
+#ifdef UBX_MDM_SARA_G3XX
+    0,  // AT_CGSN_WITH_TYPE
+#else
+    1,  // AT_CGSN_WITH_TYPE
+#endif
+    1,  // AT_CGDATA
+    0,  // AT_CGAUTH
+    1,  // AT_CNMI
+    1,  // AT_CSMP
+    1,  // AT_CMGF
+    1,  // AT_CSDH
+    1,  // PROPERTY_IPV4_STACK
+    0,  // PROPERTY_IPV6_STACK
+    0,  // PROPERTY_IPV4V6_STACK
+    0,  // PROPERTY_NON_IP_PDP_TYPE
+    1,  // PROPERTY_AT_CGEREP
+};
+#else
+static const intptr_t cellular_properties[AT_CellularDevice::PROPERTY_MAX] = {
+    0,  // C_EREG
+    0,  // C_GREG
+    0,  // C_REG
+    0,  // AT_CGSN_WITH_TYPE
+    0,  // AT_CGDATA
+    0,  // AT_CGAUTH
+    0,  // AT_CNMI
+    0,  // AT_CSMP
+    0,  // AT_CMGF
+    0,  // AT_CSDH
+    0,  // PROPERTY_IPV4_STACK
+    0,  // PROPERTY_IPV6_STACK
+    0,  // PROPERTY_IPV4V6_STACK
+    0,  // PROPERTY_NON_IP_PDP_TYPE
+    0,  // PROPERTY_AT_CGEREP
+};
+#endif
+
+UBLOX_AT::UBLOX_AT(FileHandle *fh) : AT_CellularDevice(fh), ubx_context(0)
 {
+    set_cellular_properties(cellular_properties);
 }
 
-UBLOX_AT::~UBLOX_AT()
+AT_CellularNetwork *UBLOX_AT::open_network_impl(ATHandler &at)
 {
+    return new UBLOX_AT_CellularNetwork(at, *this);
 }
 
-CellularNetwork *UBLOX_AT::open_network(FileHandle *fh)
+AT_CellularContext *UBLOX_AT::create_context_impl(ATHandler &at, const char *apn, bool cp_req, bool nonip_req)
 {
-    if (!_network) {
-        ATHandler *atHandler = get_at_handler(fh);
-        if (atHandler) {
-            _network = new UBLOX_AT_CellularNetwork(*atHandler);
-            if (!_network) {
-                release_at_handler(atHandler);
-            }
-        }
+    ubx_context = new UBLOX_AT_CellularContext(at, this, apn, cp_req, nonip_req);
+    return  ubx_context;
+}
+
+#if MBED_CONF_UBLOX_AT_PROVIDE_DEFAULT
+#include "UARTSerial.h"
+CellularDevice *CellularDevice::get_default_instance()
+{
+    static UARTSerial serial(MBED_CONF_UBLOX_AT_TX, MBED_CONF_UBLOX_AT_RX, MBED_CONF_UBLOX_AT_BAUDRATE);
+#if defined (MBED_CONF_UBLOX_AT_RTS) && defined(MBED_CONF_UBLOX_AT_CTS)
+    tr_debug("UBLOX_AT flow control: RTS %d CTS %d", MBED_CONF_UBLOX_AT_RTS, MBED_CONF_UBLOX_AT_CTS);
+    serial.set_flow_control(SerialBase::RTSCTS, MBED_CONF_UBLOX_AT_RTS, MBED_CONF_UBLOX_AT_CTS);
+#endif
+    static UBLOX_AT device(&serial);
+    return &device;
+}
+#endif
+
+nsapi_error_t UBLOX_AT::init()
+{
+    setup_at_handler();
+
+    _at->lock();
+    _at->flush();
+    _at->at_cmd_discard("", "");
+    int value = -1;
+
+#ifdef UBX_MDM_SARA_G3XX
+    value = 0;
+#elif defined(UBX_MDM_SARA_U2XX) || defined(UBX_MDM_SARA_R41XM)
+    value = 4;
+#else
+    _at->unlock();
+    return NSAPI_ERROR_UNSUPPORTED;
+#endif
+
+    nsapi_error_t err = _at->at_cmd_discard("+CFUN", "=", "%d", value);
+
+    if (err == NSAPI_ERROR_OK) {
+        _at->at_cmd_discard("E0", ""); // echo off
+        _at->at_cmd_discard("+CMEE", "=1"); // verbose responses
+        config_authentication_parameters();
+        err = _at->at_cmd_discard("+CFUN", "=1"); // set full functionality
     }
-    return _network;
+    return _at->unlock_return_error();
 }
 
-CellularPower *UBLOX_AT::open_power(FileHandle *fh)
+nsapi_error_t UBLOX_AT::config_authentication_parameters()
 {
-    if (!_power) {
-        ATHandler *atHandler = get_at_handler(fh);
-        if (atHandler) {
-            _power = new UBLOX_AT_CellularPower(*atHandler);
-            if (!_power) {
-                release_at_handler(atHandler);
-            }
+    char *config = NULL;
+    nsapi_error_t err;
+    const char *apn;
+    const char *uname;
+    const char *pwd;
+    CellularContext::AuthenticationType auth = CellularContext::NOAUTH;
+    char imsi[MAX_IMSI_LENGTH + 1];
+
+    if (ubx_context->get_apn() == NULL) {
+        err = get_imsi(imsi);
+        if (err == NSAPI_ERROR_OK) {
+            config = (char *)apnconfig(imsi);
         }
+        ubx_context->get_next_credentials(&config);
     }
-    return _power;
+
+    apn = ubx_context->get_apn();
+    pwd = ubx_context->get_pwd();
+    uname = ubx_context->get_uname();
+
+    if (*uname && *pwd) {
+        auth = ubx_context->get_auth();
+    }
+    err = set_authentication_parameters(apn, uname, pwd, auth);
+
+    return err;
+}
+
+nsapi_error_t UBLOX_AT::set_authentication_parameters(const char *apn,
+                                                      const char *username,
+                                                      const char *password,
+                                                      CellularContext::AuthenticationType auth)
+{
+    int modem_security = ubx_context->nsapi_security_to_modem_security(auth);
+
+    nsapi_error_t err = _at->at_cmd_discard("+CGDCONT", "=", "%d%s%s", 1, "IP", apn);
+
+    if (err == NSAPI_ERROR_OK) {
+#ifdef UBX_MDM_SARA_R41XM
+        if (modem_security == CellularContext::CHAP) {
+            err = _at->at_cmd_discard("+UAUTHREQ", "=", "%d%d%s%s", 1, modem_security, password, username);
+        } else if (modem_security == CellularContext::NOAUTH) {
+            err = _at->at_cmd_discard("+UAUTHREQ", "=", "%d%d", 1, modem_security);
+        } else {
+            err = _at->at_cmd_discard("+UAUTHREQ", "=", "%d%d%s%s", 1, modem_security, username, password);
+        }
+#else
+        err = _at->at_cmd_discard("+UAUTHREQ", "=", "%d%d%s%s", 1, modem_security, username, password);
+#endif
+    }
+
+    return err;
+}
+
+nsapi_error_t UBLOX_AT::get_imsi(char *imsi)
+{
+    //Special case: Command put in cmd_chr to make a 1 liner
+    return _at->at_cmd_str("", "+CIMI", imsi, MAX_IMSI_LENGTH + 1);
 }

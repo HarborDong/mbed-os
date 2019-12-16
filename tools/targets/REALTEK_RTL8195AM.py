@@ -33,7 +33,7 @@ def format_number(number, width):
     # convert to string
     line = format(number, '0%dx' % (width))
     if len(line) > width:
-        print "[ERROR] 0x%s cannot fit in width %d" % (line, width)
+        print("[ERROR] 0x%s cannot fit in width %d" % (line, width))
         sys.exit(-1)
     # cut string to list & reverse
     line = [line[i:i+2] for i in range(0, len(line), 2)]
@@ -58,7 +58,7 @@ def write_padding_bytes(output_name, size):
     current_size = os.stat(output_name).st_size
     padcount = size - current_size
     if padcount < 0:
-        print "[ERROR] image is larger than expected size"
+        print("[ERROR] image is larger than expected size")
         sys.exit(-1)
     output = open(output_name, "ab")
     output.write('\377' * padcount)
@@ -84,7 +84,7 @@ def find_symbol(toolchain, mapfile, symbol):
     HEX = '0x0{,8}(?P<addr>[0-9A-Fa-f]{8})'
     if toolchain == "GCC_ARM":
         SYM = re.compile(r'^\s+' + HEX + r'\s+' + symbol + '\r?$')
-    elif toolchain in ["ARM_STD", "ARM", "ARM_MICRO"]:
+    elif toolchain in ["ARM_STD", "ARM", "ARM_MICRO", "ARMC6"]:
         SYM = re.compile(r'^\s+' + HEX + r'\s+0x[0-9A-Fa-f]{8}\s+Code.*\s+i\.' + symbol + r'\s+.*$')
     elif toolchain == "IAR":
         SYM = re.compile(r'^' + symbol + r'\s+' + HEX + '\s+.*$')
@@ -96,7 +96,7 @@ def find_symbol(toolchain, mapfile, symbol):
                 ret = match.group("addr")
 
     if not ret:
-        print "[ERROR] cannot find the address of symbol " + symbol
+        print("[ERROR] cannot find the address of symbol " + symbol)
         return 0
 
     return int(ret,16) | 1
@@ -147,7 +147,7 @@ def create_daplink(image_bin, ram1_bin, ram2_bin):
 
     RAM2_HEADER['tag'] = format_number(TAG, 8)
     RAM2_HEADER['ver'] = format_number(VER, 8)
-    RAM2_HEADER['timestamp'] = format_number(epoch_timestamp(), 16)
+    RAM2_HEADER['timestamp'] = format_number(int(os.environ.get('DAPLINK_TIMESTAMP', epoch_timestamp())), 16)
     RAM2_HEADER['size'] = format_number(os.stat(ram2_bin).st_size + 72, 8)
     RAM2_HEADER['hash'] = format_string(sha256_checksum(ram2_bin))
     RAM2_HEADER['campaign'] = format_string(CAMPAIGN)
@@ -176,7 +176,7 @@ def rtl8195a_elf2bin(t_self, image_elf, image_bin):
     image_map = ".".join(image_name + ['map'])
 
     ram1_bin = os.path.join(TOOLS_BOOTLOADERS, "REALTEK_RTL8195AM", "ram_1.bin")
-    ram2_bin = ".".join(image_name) + '-payload.bin'
+    ram2_bin = ".".join(image_name) + '_update.bin'
 
     entry = find_symbol(t_self.name, image_map, "PLAT_Start")
     segment = parse_load_segment(t_self.name, image_elf)

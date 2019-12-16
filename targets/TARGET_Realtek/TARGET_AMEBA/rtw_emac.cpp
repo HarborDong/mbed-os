@@ -33,7 +33,7 @@
 
 #define RTW_EMAC_MTU_SIZE  (1500U)
 
-RTW_EMAC::RTW_EMAC() 
+RTW_EMAC::RTW_EMAC()
 {
     set_callback_func((emac_callback)(&RTW_EMAC::wlan_emac_recv), this);
 }
@@ -66,7 +66,7 @@ bool RTW_EMAC::get_hwaddr(uint8_t *addr) const
     int i;
 
     if (RTW_SUCCESS == wifi_get_mac_address(mac)) {
-        if (sscanf(mac, "%x:%x:%x:%x:%x:%x", 
+        if (sscanf(mac, "%x:%x:%x:%x:%x:%x",
             &val[0], &val[1], &val[2], &val[3], &val[4], &val[5]) != 6) {
             printf("Get HW address failed\r\n");
         }
@@ -76,6 +76,7 @@ bool RTW_EMAC::get_hwaddr(uint8_t *addr) const
     } else {
         printf("Get HW address failed\r\n");
     }
+    return true;
 }
 
 void RTW_EMAC::set_hwaddr(const uint8_t *addr)
@@ -121,7 +122,7 @@ bool RTW_EMAC::link_out(emac_mem_buf_t *buf)
 bool RTW_EMAC::power_up()
 {
     wifi_on(RTW_MODE_STA);
-    wait_ms(1000);
+    rtos::ThisThread::sleep_for(1000);
     wlan_emac_link_change(true);
     return true;
 }
@@ -176,7 +177,7 @@ void RTW_EMAC::wlan_emac_recv(void *param, struct netif *netif, uint32_t len)
     buf = enet->memory_manager->alloc_heap(len, 0);
     if (buf == NULL) {
         return;
-    } 
+    }
 
     enet->memory_manager->set_len(buf, len);
     p = buf;
@@ -205,7 +206,7 @@ void mbed_default_mac_address(char *mac) {
 
 void mbed_mac_address(char *mac)
 {
-    char hwaddr[20];    
+    char hwaddr[20];
     int val[6];
     int i;
     if (RTW_SUCCESS == wifi_get_mac_address(hwaddr)) {

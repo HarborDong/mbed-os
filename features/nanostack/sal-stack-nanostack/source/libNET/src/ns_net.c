@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2018, Arm Limited and affiliates.
+ * Copyright (c) 2014-2019, Arm Limited and affiliates.
  * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -28,7 +28,7 @@
 #include "socket_api.h"
 #include "nsdynmemLIB.h"
 #include "NWK_INTERFACE/Include/protocol.h"
-#include "Core/include/socket.h"
+#include "Core/include/ns_socket.h"
 #ifdef HAVE_RPL
 #include "RPL/rpl_of0.h"
 #include "RPL/rpl_mrhof.h"
@@ -67,6 +67,9 @@
 #include "6LoWPAN/Thread/thread_bootstrap.h"
 #include "6LoWPAN/Thread/thread_management_internal.h"
 #include "6LoWPAN/ws/ws_bootstrap.h"
+#ifdef HAVE_WS
+#include "6LoWPAN/ws/ws_pae_controller.h"
+#endif
 #include "BorderRouter/border_router.h"
 #include "Service_Libs/mle_service/mle_service_api.h"
 #include "6LoWPAN/MAC/mac_data_poll.h"
@@ -86,20 +89,21 @@
 static int arm_channel_list_validation(const channel_list_s *scan_list)
 {
     uint8_t i = 1;
-    if(scan_list)
-    {
-        if(scan_list->channel_page == CHANNEL_PAGE_9 || scan_list->channel_page == CHANNEL_PAGE_10)
-            i=8;
-        while(i--)
-            if(scan_list->channel_mask[i])
+    if (scan_list) {
+        if (scan_list->channel_page == CHANNEL_PAGE_9 || scan_list->channel_page == CHANNEL_PAGE_10) {
+            i = 8;
+        }
+        while (i--)
+            if (scan_list->channel_mask[i]) {
                 return 0;
+            }
     }
     return -1;
 }
 
 
 /* Energy & Active Scan API */
-int8_t arm_net_energy_scan(int8_t interface_id, channel_list_s *scan_list, void (*passed_fptr)(int8_t if_id, const mlme_scan_conf_t* conf), uint8_t energy_tresshold)
+int8_t arm_net_energy_scan(int8_t interface_id, channel_list_s *scan_list, void (*passed_fptr)(int8_t if_id, const mlme_scan_conf_t *conf), uint8_t energy_tresshold)
 {
     (void)interface_id;
     (void)scan_list;
@@ -127,7 +131,7 @@ int8_t arm_net_energy_scan(int8_t interface_id, channel_list_s *scan_list, void 
 
                 mlme_scan_t req;
                 mac_create_scan_request(MAC_ED_SCAN_TYPE, &cur->mac_parameters->nwk_scan_params.stack_chan_list, 5, &req);
-                if( cur->mac_api ){
+                if (cur->mac_api) {
                     cur->scan_cb = passed_fptr;
                     cur->mac_api->mlme_req(cur->mac_api, MLME_SCAN, &req);
                     ret_val = 0;
@@ -140,7 +144,7 @@ int8_t arm_net_energy_scan(int8_t interface_id, channel_list_s *scan_list, void 
 
 }
 
-int8_t arm_net_nwk_scan(int8_t interface_id, channel_list_s *scan_list, void (*passed_fptr)(int8_t if_id, const mlme_scan_conf_t* conf), uint8_t scan_level)
+int8_t arm_net_nwk_scan(int8_t interface_id, channel_list_s *scan_list, void (*passed_fptr)(int8_t if_id, const mlme_scan_conf_t *conf), uint8_t scan_level)
 {
     (void)interface_id;
     (void)scan_list;
@@ -171,7 +175,7 @@ int8_t arm_net_nwk_scan(int8_t interface_id, channel_list_s *scan_list, void (*p
 
                 mlme_scan_t req;
                 mac_create_scan_request(MAC_ACTIVE_SCAN, &scan_params->stack_chan_list, 5, &req);
-                if( cur->mac_api ){
+                if (cur->mac_api) {
                     cur->scan_cb = passed_fptr;
                     scan_params->active_scan_active = true;
                     cur->mac_api->mlme_req(cur->mac_api, MLME_SCAN, &req);
@@ -602,7 +606,7 @@ int8_t arm_net_address_list_get_next(int8_t interface_id, int *n, uint8_t addres
                 }
             }
             if (save_address) {
-                if( *n == address_count ) {
+                if (*n == address_count) {
                     memcpy(address_buffer, e->address, 16);
                     *n = *n + 1;
                     return 0;
@@ -677,7 +681,7 @@ int8_t arm_net_route_delete(const uint8_t *prefix, uint8_t prefix_len, const uin
 int8_t arm_nwk_interface_ethernet_init(eth_mac_api_t *api, const char *interface_name_ptr)
 {
 #ifdef HAVE_ETHERNET
-    if( !api ){
+    if (!api) {
         return -1;
     }
 
@@ -691,14 +695,38 @@ int8_t arm_nwk_interface_ethernet_init(eth_mac_api_t *api, const char *interface
     cur->interface_name = interface_name_ptr;
     return cur->id;
 #else
+    (void)api;
+    (void)interface_name_ptr;
     return -2;
 #endif
 }
 
+extern int8_t arm_nwk_interface_ppp_init(struct eth_mac_api_s *api, const char *interface_name_ptr)
+{
+#ifdef HAVE_ETHERNET
+    if (!api) {
+        return -1;
+    }
+
+    protocol_interface_info_entry_t *cur = protocol_stack_interface_generate_ppp(api);
+    if (!cur) {
+        return -3;
+    }
+
+    cur->if_up = ipv6_interface_up;
+    cur->if_down = ipv6_interface_down;
+    cur->interface_name = interface_name_ptr;
+    return cur->id;
+#else
+    (void)api;
+    (void)interface_name_ptr;
+    return -2;
+#endif
+}
 
 int8_t arm_nwk_interface_lowpan_init(mac_api_t *api, char *interface_name_ptr)
 {
-    if ( !api ) {
+    if (!api) {
         return -1;
     }
 
@@ -715,20 +743,19 @@ static int arm_net_channel_bit_mask_to_number(const uint32_t *channel_mask)
 {
     int i, j;
 
-    for(j=0; j<8; j++)
-    {
-        for(i=0; i<32; i++)
-        {
-            if(channel_mask[j] & ((uint32_t)1 << i))
-            {
+    for (j = 0; j < 8; j++) {
+        for (i = 0; i < 32; i++) {
+            if (channel_mask[j] & ((uint32_t)1 << i)) {
                 break;
             }
         }
-        if(i<32)
+        if (i < 32) {
             break;
+        }
     }
-    if(j>7)
+    if (j > 7) {
         return -1;
+    }
     return i + (j * 32);
 }
 
@@ -753,8 +780,7 @@ int8_t arm_nwk_interface_network_driver_set(int8_t interface_id, const channel_l
     int8_t ret_val = -1;
     protocol_interface_info_entry_t *cur = 0;
 
-    if(arm_channel_list_validation(nwk_channel_list))
-    {
+    if (arm_channel_list_validation(nwk_channel_list)) {
         tr_debug("Given channel mask is empty!\n");
         return -5;
     }
@@ -884,7 +910,7 @@ int8_t arm_nwk_link_layer_security_mode(int8_t interface_id, net_6lowpan_link_la
     }
 
     //Verify MLE Service
-    if (arm_6lowpan_mle_service_ready_for_security_init(cur) !=0 ) {
+    if (arm_6lowpan_mle_service_ready_for_security_init(cur) != 0) {
         return -1;
     }
 
@@ -929,10 +955,83 @@ int8_t arm_nwk_link_layer_security_mode(int8_t interface_id, net_6lowpan_link_la
 
 int8_t arm_network_certificate_chain_set(const arm_certificate_chain_entry_s *chain_info)
 {
-#ifndef PANA
+#if !defined(PANA) && !defined(HAVE_WS)
     (void)chain_info;
 #endif
+
+#ifdef HAVE_WS
+    ws_pae_controller_certificate_chain_set(chain_info);
+#endif
+
     return pana_interface_certificate_chain_set(chain_info);
+}
+
+int8_t arm_network_trusted_certificate_add(const arm_certificate_entry_s *cert)
+{
+#ifdef HAVE_WS
+    return ws_pae_controller_trusted_certificate_add(cert);
+#else
+    (void) cert;
+    return -1;
+#endif
+}
+
+int8_t arm_network_trusted_certificate_remove(const arm_certificate_entry_s *cert)
+{
+#ifdef HAVE_WS
+    return ws_pae_controller_trusted_certificate_remove(cert);
+#else
+    (void) cert;
+    return -1;
+#endif
+}
+
+int8_t arm_network_trusted_certificates_remove(void)
+{
+#ifdef HAVE_WS
+    return ws_pae_controller_trusted_certificates_remove();
+#else
+    return -1;
+#endif
+}
+
+int8_t arm_network_own_certificate_add(const arm_certificate_entry_s *cert)
+{
+#ifdef HAVE_WS
+    return ws_pae_controller_own_certificate_add(cert);
+#else
+    (void) cert;
+    return -1;
+#endif
+}
+
+extern int8_t arm_network_own_certificates_remove(void)
+{
+#ifdef HAVE_WS
+    return ws_pae_controller_own_certificates_remove();
+#else
+    return -1;
+#endif
+}
+
+int8_t arm_network_certificate_revocation_list_add(const arm_cert_revocation_list_entry_s *crl)
+{
+#ifdef HAVE_WS
+    return ws_pae_controller_certificate_revocation_list_add(crl);
+#else
+    (void) crl;
+    return -1;
+#endif
+}
+
+int8_t arm_network_certificate_revocation_list_remove(const arm_cert_revocation_list_entry_s *crl)
+{
+#ifdef HAVE_WS
+    return ws_pae_controller_certificate_revocation_list_remove(crl);
+#else
+    (void) crl;
+    return -1;
+#endif
 }
 
 /**
@@ -951,7 +1050,7 @@ int8_t arm_network_key_get(int8_t interface_id, ns_keys_t *key)
     (void)interface_id;
     (void)key;
 #endif
-    return pana_network_key_get(interface_id,key);
+    return pana_network_key_get(interface_id, key);
 }
 
 int8_t arm_pana_server_library_init(int8_t interface_id, net_tls_cipher_e cipher_mode, const uint8_t *key_material, uint32_t time_period_before_activate_key)
@@ -1017,11 +1116,20 @@ int8_t arm_pana_client_library_init(int8_t interface_id, net_tls_cipher_e cipher
 
 int8_t arm_nwk_interface_configure_ipv6_bootstrap_set(int8_t interface_id, net_ipv6_mode_e bootstrap_mode, const uint8_t *ipv6_prefix_pointer)
 {
-    return ipv6_interface_configure_ipv6_bootstrap_set(interface_id,bootstrap_mode,ipv6_prefix_pointer);
+#ifndef HAVE_ETHERNET
+    (void)interface_id;
+    (void)bootstrap_mode;
+    (void)ipv6_prefix_pointer;
+#endif
+    return ipv6_interface_configure_ipv6_bootstrap_set(interface_id, bootstrap_mode, ipv6_prefix_pointer);
 }
 
 int8_t arm_nwk_interface_accept_ipv6_ra(int8_t interface_id, net_ipv6_accept_ra_e accept_ra)
 {
+#ifndef HAVE_ETHERNET
+    (void)interface_id;
+    (void)accept_ra;
+#endif
     return ipv6_interface_accept_ra(interface_id, accept_ra);
 }
 
@@ -1071,11 +1179,11 @@ int8_t arm_nwk_interface_configure_6lowpan_bootstrap_set(int8_t interface_id, ne
     if (ret_val == 0) {
 
         if (net_6lowpan_mode_extension == NET_6LOWPAN_THREAD) {
-            ret_val = thread_node_bootstrap_init(interface_id,bootstrap_mode);
+            ret_val = thread_node_bootstrap_init(interface_id, bootstrap_mode);
         } else if (net_6lowpan_mode_extension == NET_6LOWPAN_WS) {
-                ret_val = ws_bootstrap_init(interface_id,bootstrap_mode);
+            ret_val = ws_bootstrap_init(interface_id, bootstrap_mode);
         } else {
-            ret_val = arm_6lowpan_bootstarp_bootstrap_set(interface_id,bootstrap_mode,net_6lowpan_mode_extension);
+            ret_val = arm_6lowpan_bootstarp_bootstrap_set(interface_id, bootstrap_mode, net_6lowpan_mode_extension);
         }
     }
 
@@ -1091,8 +1199,7 @@ int8_t arm_nwk_set_channel_list(int8_t interface_id, const channel_list_s *nwk_c
         return -1;
     }
 
-    if (arm_channel_list_validation(nwk_channel_list))
-    {
+    if (arm_channel_list_validation(nwk_channel_list)) {
         tr_debug("Given channel mask is empty!\n");
         return -2;
     }
@@ -1102,10 +1209,10 @@ int8_t arm_nwk_set_channel_list(int8_t interface_id, const channel_list_s *nwk_c
         return -4;
     }
 
-    if(cur->bootsrap_mode == ARM_NWK_BOOTSRAP_MODE_6LoWPAN_BORDER_ROUTER)
-    {
-        if(!cur->border_router_setup)
+    if (cur->bootsrap_mode == ARM_NWK_BOOTSRAP_MODE_6LoWPAN_BORDER_ROUTER) {
+        if (!cur->border_router_setup) {
             return -2;
+        }
 
         const int channel_number = arm_net_channel_bit_mask_to_number(nwk_channel_list->channel_mask);
         if (channel_number < 0) {
@@ -1115,9 +1222,7 @@ int8_t arm_nwk_set_channel_list(int8_t interface_id, const channel_list_s *nwk_c
         cur->mac_parameters->mac_channel = channel_number;
         cur->border_router_setup->chanlist = &cur->mac_parameters->mac_channel_list;
         ret_val = 0;
-    }
-    else
-    {
+    } else {
         // copy the channel information and store one internal pointer to it
         cur->mac_parameters->mac_channel_list = *nwk_channel_list;
         ret_val = 0;
@@ -1131,21 +1236,15 @@ int8_t arm_nwk_6lowpan_link_scan_parameter_set(int8_t interface_id, uint8_t scan
     protocol_interface_info_entry_t *cur = 0;
 
     cur = protocol_stack_interface_info_get_by_id(interface_id);
-    if(cur)
-    {
-        if(cur->lowpan_info & INTERFACE_NWK_ACTIVE)
-        {
+    if (cur) {
+        if (cur->lowpan_info & INTERFACE_NWK_ACTIVE) {
             return -4;
         }
 
-        if(cur->mac_parameters)
-        {
-            if(scan_time > 14)
-            {
+        if (cur->mac_parameters) {
+            if (scan_time > 14) {
                 ret_val = -5;
-            }
-            else
-            {
+            } else {
                 nwk_scan_params_t *scan_params = 0;
                 scan_params = &cur->mac_parameters->nwk_scan_params;
                 scan_params->scan_duration = scan_time;
@@ -1232,15 +1331,15 @@ static void net_automatic_loopback_route_update(protocol_interface_info_entry_t 
 }
 
 int8_t arm_nwk_6lowpan_beacon_join_priority_tx_callback_set(int8_t interface_id,
-    beacon_join_priority_tx_cb *beacon_join_priority_tx_cb_ptr)
+                                                            beacon_join_priority_tx_cb *beacon_join_priority_tx_cb_ptr)
 {
     return (mac_beacon_link_beacon_join_priority_tx_callback_set(interface_id, beacon_join_priority_tx_cb_ptr));
 }
 
 int8_t arm_nwk_6lowpan_beacon_compare_rx_callback_set(int8_t interface_id,
-    beacon_compare_rx_cb *beacon_compare_rx_cb_ptr)
+                                                      beacon_compare_rx_cb *beacon_compare_rx_cb_ptr)
 {
-    return(mac_beacon_link_beacon_compare_rx_callback_set(interface_id, beacon_compare_rx_cb_ptr));
+    return (mac_beacon_link_beacon_compare_rx_callback_set(interface_id, beacon_compare_rx_cb_ptr));
 }
 
 /**
@@ -1312,16 +1411,16 @@ int8_t arm_nwk_host_mode_set(int8_t interface_id, net_host_mode_t mode, uint32_t
         return -1;
     }
 
-    if (thread_info(cur)){
+    if (thread_info(cur)) {
         //save polltime for later use, polltime is zero for fast poll mode
         thread_info(cur)->sleepy_host_poll_time = 0;
-        if (mode == NET_HOST_SLOW_POLL_MODE){
+        if (mode == NET_HOST_SLOW_POLL_MODE) {
             thread_info(cur)->sleepy_host_poll_time = poll_time;
         }
         if (old_mode == NET_HOST_RX_ON_IDLE && mode != old_mode
                 && thread_info(cur)->thread_device_mode == THREAD_DEVICE_MODE_END_DEVICE) {
             tr_debug("End device changing to SED");
-            thread_management_device_type_set(cur->id,THREAD_DEVICE_SED);
+            thread_management_device_type_set(cur->id, THREAD_DEVICE_SED);
             return 0;
         }
     }
@@ -1355,7 +1454,7 @@ int8_t net_nvm_data_clean(int8_t interface_id)
     protocol_interface_info_entry_t *cur = 0;
     cur = protocol_stack_interface_info_get_by_id(interface_id);
     if (cur) {
-        if (cur->mac_parameters ) {
+        if (cur->mac_parameters) {
             nwk_filter_params_s *filter = &(cur->mac_parameters->nwk_filter_params);
 
             if ((cur->lowpan_info & INTERFACE_NWK_ACTIVE) == 0) {
@@ -1427,8 +1526,39 @@ int arm_nwk_sleepy_device_parent_buffer_size_set(int8_t interface_id, uint16_t b
     cur = protocol_stack_interface_info_get_by_id(interface_id);
     if (cur) {
         return lowpan_adaptation_indirect_queue_params_set(cur, big_packet_threshold,
-            big_packets_total_count, small_packets_per_child_count);
+                                                           big_packets_total_count, small_packets_per_child_count);
     }
     return -1;
 }
 
+int8_t arm_nwk_set_cca_threshold(int8_t interface_id, uint8_t cca_threshold)
+{
+    protocol_interface_info_entry_t *cur;
+    cur = protocol_stack_interface_info_get_by_id(interface_id);
+    if (!cur || !cur->mac_api || (cca_threshold > 100)) {
+        return -1;
+    }
+    mlme_set_t set_req;
+    set_req.attr = macCCAThreshold;
+    set_req.attr_index = 0;
+    set_req.value_pointer = &cca_threshold;
+    set_req.value_size = sizeof(cca_threshold);
+    cur->mac_api->mlme_req(cur->mac_api, MLME_SET, &set_req);
+    return 0;
+}
+
+int8_t arm_nwk_set_tx_output_power(int8_t interface_id, uint8_t tx_power)
+{
+    protocol_interface_info_entry_t *cur;
+    cur = protocol_stack_interface_info_get_by_id(interface_id);
+    if (!cur || !cur->mac_api || (tx_power > 100)) {
+        return -1;
+    }
+    mlme_set_t set_req;
+    set_req.attr = macTXPower;
+    set_req.attr_index = 0;
+    set_req.value_pointer = &tx_power;
+    set_req.value_size = sizeof(tx_power);
+    cur->mac_api->mlme_req(cur->mac_api, MLME_SET, &set_req);
+    return 0;
+}

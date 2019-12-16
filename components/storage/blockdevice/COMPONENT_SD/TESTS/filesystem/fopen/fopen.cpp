@@ -65,10 +65,12 @@ using namespace utest::v1;
  *        "DEVICE_SPI": 1,
  *        "FSFAT_SDCARD_INSTALLED": 1
  *      },
- *  	<<< lines removed >>>
+ *      <<< lines removed >>>
  */
 
-#if defined(DEVICE_SPI) && ( defined(MBED_CONF_APP_FSFAT_SDCARD_INSTALLED) || (MBED_CONF_SD_FSFAT_SDCARD_INSTALLED))
+#if !(DEVICE_SPI && ( defined(MBED_CONF_APP_FSFAT_SDCARD_INSTALLED) || (MBED_CONF_SD_FSFAT_SDCARD_INSTALLED)))
+#error [NOT_SUPPORTED] DEVICE_SPI need to be enabled for this test. SDcard need to be installed for this test.
+#else
 static char fsfat_fopen_utest_msg_g[FSFAT_UTEST_MSG_BUF_SIZE];
 #define FSFAT_FOPEN_TEST_MOUNT_PT_NAME      "sd"
 #define FSFAT_FOPEN_TEST_MOUNT_PT_PATH      "/" FSFAT_FOPEN_TEST_MOUNT_PT_NAME
@@ -80,6 +82,7 @@ static const char *sd_testfile_path = "/sd/test.txt";
 SDBlockDevice sd(MBED_CONF_SD_SPI_MOSI, MBED_CONF_SD_SPI_MISO, MBED_CONF_SD_SPI_CLK, MBED_CONF_SD_SPI_CS);
 FATFileSystem fs("sd", &sd);
 
+#define FSFAT_FOPEN_TEST_00      fsfat_fopen_test_00
 #define FSFAT_FOPEN_TEST_01      fsfat_fopen_test_01
 #define FSFAT_FOPEN_TEST_02      fsfat_fopen_test_02
 #define FSFAT_FOPEN_TEST_03      fsfat_fopen_test_03
@@ -155,7 +158,7 @@ static int32_t fsfat_filepath_split(char *filepath, char *parts[], uint32_t num)
     char *z = filepath;
 
     while (i < num && *z != '\0') {
-        if (*z == '/' ) {
+        if (*z == '/') {
             *z = '\0';
             parts[i] = ++z;
             i++;
@@ -200,7 +203,7 @@ int32_t fsfat_filepath_remove_all(char *filepath)
     while (pos != fpathbuf) {
         /* If the remaining file path is the mount point path then finish as the mount point cannot be removed */
         if (strlen(fpathbuf) == strlen(FSFAT_FOPEN_TEST_MOUNT_PT_PATH)) {
-            if ( strncmp(fpathbuf, FSFAT_FOPEN_TEST_MOUNT_PT_PATH, strlen(fpathbuf)) == 0) {
+            if (strncmp(fpathbuf, FSFAT_FOPEN_TEST_MOUNT_PT_PATH, strlen(fpathbuf)) == 0) {
                 break;
             }
         }
@@ -274,6 +277,26 @@ static int32_t fsfat_filepath_make_dirs(char *filepath, bool do_asserts)
         free(fpathbuf);
     }
     return ret;
+}
+
+/** @brief
+ * First and last test must format the SD card to FAT FS format:
+ * @return on success returns CaseNext to continue to next test case, otherwise will assert on errors.
+ */
+control_t fsfat_fopen_test_00(const size_t call_count)
+{
+    FSFAT_FENTRYLOG("%s:entered\n", __func__);
+    (void) call_count;
+    int32_t ret = -1;
+
+    fs.unmount();
+    ret = fs.format(&sd);
+    FSFAT_TEST_UTEST_MESSAGE(fsfat_fopen_utest_msg_g, FSFAT_UTEST_MSG_BUF_SIZE,
+                             "%s:Error: failed to format sdcard (ret=%d)\n", __func__, (int) ret);
+    TEST_ASSERT_MESSAGE(ret == 0, fsfat_fopen_utest_msg_g);
+    fs.mount(&sd);
+
+    return CaseNext;
 }
 
 
@@ -621,7 +644,7 @@ control_t fsfat_fopen_test_05(const size_t call_count)
     while (node->code !=  fsfat_fopen_kv_name_ascii_table_code_sentinel_g) {
         /* loop over range */
         for (j = node->code; j < (node + 1)->code; j++) {
-            if ( (j >= 48 && j <= 57) || (j >= 65 && j <= 90) || (j >= 97 && j <= 122)) {
+            if ((j >= 48 && j <= 57) || (j >= 65 && j <= 90) || (j >= 97 && j <= 122)) {
                 FSFAT_DBGLOG("%s: skipping alpha-numeric ascii character code %d (%c).\n", __func__, (int) j, (char) j);
                 continue;
             }
@@ -775,10 +798,10 @@ control_t fsfat_fopen_test_06(const size_t call_count)
 
 /** @brief  test for errno reporting on a failed fopen()call
  *
- *	This test does the following:
- *	- tries to open a file that does not exist for reading, and checks that a NULL pointer is returned.
- *	- checks that errno is not 0 as there is an error.
- *	- checks that ferror() returns 1 indicating an error exists.
+ *  This test does the following:
+ *  - tries to open a file that does not exist for reading, and checks that a NULL pointer is returned.
+ *  - checks that errno is not 0 as there is an error.
+ *  - checks that ferror() returns 1 indicating an error exists.
  *
  * Note: see NOTE_1 below.
  *
@@ -1532,54 +1555,6 @@ control_t fsfat_fopen_test_16(const size_t call_count)
     return CaseNext;
 }
 
-
-#else
-
-
-#define FSFAT_FOPEN_TEST_01      fsfat_fopen_test_dummy
-#define FSFAT_FOPEN_TEST_02      fsfat_fopen_test_dummy
-#define FSFAT_FOPEN_TEST_03      fsfat_fopen_test_dummy
-#define FSFAT_FOPEN_TEST_04      fsfat_fopen_test_dummy
-#define FSFAT_FOPEN_TEST_05      fsfat_fopen_test_dummy
-#define FSFAT_FOPEN_TEST_06      fsfat_fopen_test_dummy
-#define FSFAT_FOPEN_TEST_07      fsfat_fopen_test_dummy
-#define FSFAT_FOPEN_TEST_08      fsfat_fopen_test_dummy
-#define FSFAT_FOPEN_TEST_09      fsfat_fopen_test_dummy
-#define FSFAT_FOPEN_TEST_10      fsfat_fopen_test_dummy
-#define FSFAT_FOPEN_TEST_11      fsfat_fopen_test_dummy
-#define FSFAT_FOPEN_TEST_12      fsfat_fopen_test_dummy
-#define FSFAT_FOPEN_TEST_13      fsfat_fopen_test_dummy
-#define FSFAT_FOPEN_TEST_14      fsfat_fopen_test_dummy
-#define FSFAT_FOPEN_TEST_15      fsfat_fopen_test_dummy
-#define FSFAT_FOPEN_TEST_16      fsfat_fopen_test_dummy
-#define FSFAT_FOPEN_TEST_17      fsfat_fopen_test_dummy
-#define FSFAT_FOPEN_TEST_18      fsfat_fopen_test_dummy
-#define FSFAT_FOPEN_TEST_19      fsfat_fopen_test_dummy
-#define FSFAT_FOPEN_TEST_20      fsfat_fopen_test_dummy
-#define FSFAT_FOPEN_TEST_21      fsfat_fopen_test_dummy
-#define FSFAT_FOPEN_TEST_22      fsfat_fopen_test_dummy
-#define FSFAT_FOPEN_TEST_23      fsfat_fopen_test_dummy
-#define FSFAT_FOPEN_TEST_24      fsfat_fopen_test_dummy
-#define FSFAT_FOPEN_TEST_25      fsfat_fopen_test_dummy
-#define FSFAT_FOPEN_TEST_26      fsfat_fopen_test_dummy
-#define FSFAT_FOPEN_TEST_27      fsfat_fopen_test_dummy
-#define FSFAT_FOPEN_TEST_28      fsfat_fopen_test_dummy
-#define FSFAT_FOPEN_TEST_29      fsfat_fopen_test_dummy
-#define FSFAT_FOPEN_TEST_30      fsfat_fopen_test_dummy
-
-/** @brief  fsfat_fopen_test_dummy    Dummy test case for testing when platform doesnt have an SDCard installed.
- *
- * @return success always
- */
-static control_t fsfat_fopen_test_dummy()
-{
-    printf("Null test\n");
-    return CaseNext;
-}
-
-#endif
-
-
 /// @cond FSFAT_DOXYGEN_DISABLE
 utest::v1::status_t greentea_setup(const size_t number_of_cases)
 {
@@ -1590,6 +1565,7 @@ utest::v1::status_t greentea_setup(const size_t number_of_cases)
 Case cases[] = {
     /*          1         2         3         4         5         6        7  */
     /* 1234567890123456789012345678901234567890123456789012345678901234567890 */
+    Case("FSFAT_FOPEN_TEST_00: format sd card to FAT FS.", FSFAT_FOPEN_TEST_00),
     Case("FSFAT_FOPEN_TEST_01: fopen()/fwrite()/fclose() directories/file in multi-dir filepath.", FSFAT_FOPEN_TEST_01),
     Case("FSFAT_FOPEN_TEST_02: fopen(r) pre-existing file try to write it.", FSFAT_FOPEN_TEST_02),
     Case("FSFAT_FOPEN_TEST_03: fopen(w+) pre-existing file try to write it.", FSFAT_FOPEN_TEST_03),
@@ -1619,3 +1595,4 @@ int main()
     return !Harness::run(specification);
 }
 /// @endcond
+#endif // !(DEVICE_SPI && ( defined(MBED_CONF_APP_FSFAT_SDCARD_INSTALLED) || (MBED_CONF_SD_FSFAT_SDCARD_INSTALLED)))

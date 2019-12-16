@@ -1,5 +1,6 @@
 /* mbed Microcontroller Library
  * Copyright (c) 2015 ARM Limited
+ * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,6 +32,7 @@ static const ticker_interface_t lp_interface = {
     .fire_interrupt = lp_ticker_fire_interrupt,
     .get_info = lp_ticker_get_info,
     .free = lp_ticker_free,
+    .runs_in_deep_sleep = true,
 };
 
 static const ticker_data_t lp_data = {

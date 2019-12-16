@@ -19,12 +19,11 @@
 #include "greentea-client/test_env.h"
 #include "unity.h"
 #include "utest.h"
-#include "rtos.h"
 #include "hal/us_ticker_api.h"
 
 #if !DEVICE_LPTICKER
 #error [NOT_SUPPORTED] test not supported
-#endif
+#else
 
 using namespace utest::v1;
 
@@ -350,3 +349,5 @@ int main()
 {
     return !Harness::run(specification);
 }
+
+#endif // !DEVICE_LPTICKER

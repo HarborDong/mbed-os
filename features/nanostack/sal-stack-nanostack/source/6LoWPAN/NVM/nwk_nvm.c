@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, Arm Limited and affiliates.
+ * Copyright (c) 2017-2019, Arm Limited and affiliates.
  * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -22,7 +22,7 @@
 #include "string.h"
 #include "randLIB.h"
 #include "nsdynmemLIB.h"
-#include "Core/include/socket.h"
+#include "Core/include/ns_socket.h"
 #include "NWK_INTERFACE/Include/protocol.h"
 #include "6LoWPAN/MAC/mac_helper.h"
 #include "6LoWPAN/NVM/nwk_nvm.h"
@@ -129,14 +129,14 @@ static void nwk_nvm_params_update_cb(nwk_wpan_nvm_api_t *api, bool if_down_call)
 
     bool push_new_data = false;
     if (api->params.mac_security_frame_counter < mac_counter) {
-        if (mac_counter - api->params.mac_security_frame_counter > COUNTER_NVM_UPDATE_INCREMENT - 50  ) {
+        if (mac_counter - api->params.mac_security_frame_counter > COUNTER_NVM_UPDATE_INCREMENT - 50) {
             push_new_data = true;
             api->params.mac_security_frame_counter = mac_counter;
         }
     }
 
     if (api->params.mle_securit_counter < mlme_counter) {
-        if (mlme_counter - api->params.mle_securit_counter > COUNTER_NVM_UPDATE_INCREMENT - 50 ) {
+        if (mlme_counter - api->params.mle_securit_counter > COUNTER_NVM_UPDATE_INCREMENT - 50) {
             push_new_data = true;
             api->params.mle_securit_counter = mlme_counter;
         }

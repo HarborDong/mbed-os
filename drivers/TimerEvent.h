@@ -1,5 +1,6 @@
 /* mbed Microcontroller Library
- * Copyright (c) 2006-2013 ARM Limited
+ * Copyright (c) 2006-2019 ARM Limited
+ * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,16 +18,18 @@
 #define MBED_TIMEREVENT_H
 
 #include "hal/ticker_api.h"
-#include "hal/us_ticker_api.h"
 #include "platform/NonCopyable.h"
 
 namespace mbed {
-/** \addtogroup drivers */
+/**
+ * \defgroup drivers_TimerEvent TimerEvent class
+ * \ingroup drivers-public-api-ticker
+ * @{
+ */
 
 /** Base abstraction for timer interrupts
  *
  * @note Synchronization level: Interrupt safe
- * @ingroup drivers
  */
 class TimerEvent : private NonCopyable<TimerEvent> {
 public:
@@ -43,6 +46,7 @@ public:
      */
     virtual ~TimerEvent();
 
+#if !defined(DOXYGEN_ONLY)
 protected:
     // The handler called to service the timer event of the derived class
     virtual void handler() = 0;
@@ -77,7 +81,10 @@ protected:
     ticker_event_t event;
 
     const ticker_data_t *_ticker_data;
+#endif
 };
+
+/** @}*/
 
 } // namespace mbed
 

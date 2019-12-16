@@ -277,12 +277,14 @@ typedef enum {
     SPI_CS      = D10,
     PWM_OUT     = D9,
 
-    /**** USB pins ****/
+    /**** USB FS pins ****/
     USB_OTG_FS_DM = PA_11,
     USB_OTG_FS_DP = PA_12,
     USB_OTG_FS_ID = PA_10,
     USB_OTG_FS_SOF = PA_8,
     USB_OTG_FS_VBUS = PA_9,
+
+    /**** USB HS pins ****/
     USB_OTG_HS_DM = PB_14,
     USB_OTG_HS_DP = PB_15,
     USB_OTG_HS_ID = PB_12,
@@ -324,14 +326,6 @@ typedef enum {
     SYS_TRACED3_ALT0 = PG_14,
     SYS_WKUP0 = PA_0,
     SYS_WKUP1 = PC_13,
-
-    /**** QSPI pins ****/
-    QSPI1_IO0 = PD_11,
-    QSPI1_IO1 = PD_12,
-    QSPI1_IO2 = PE_2,
-    QSPI1_IO3 = PD_13,
-    QSPI1_SCK = PB_2,
-    QSPI1_CSN = PB_6,
 
     // Not connected
     NC = (int)0xFFFFFFFF

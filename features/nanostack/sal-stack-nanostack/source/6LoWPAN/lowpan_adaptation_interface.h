@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2018, Arm Limited and affiliates.
+ * Copyright (c) 2016-2019, Arm Limited and affiliates.
  * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,7 +17,7 @@
 
 #ifndef LOWPAN_ADAPTATION_INTERFACE_H_
 #define LOWPAN_ADAPTATION_INTERFACE_H_
-#include "Core/include/address.h"
+#include "Core/include/ns_address_internal.h"
 
 struct protocol_interface_info_entry;
 struct mcps_data_conf_s;
@@ -39,7 +39,7 @@ int8_t lowpan_adaptation_interface_mpx_register(int8_t interface_id, struct mpx_
 /**
  * \brief call this before normatl TX. This function prepare buffer link spesific metadata and verify packet destination
  */
-struct buffer * lowpan_adaptation_data_process_tx_preprocess(struct protocol_interface_info_entry *cur, struct buffer *buf);
+struct buffer *lowpan_adaptation_data_process_tx_preprocess(struct protocol_interface_info_entry *cur, struct buffer *buf);
 
 int8_t lowpan_adaptation_interface_tx(struct protocol_interface_info_entry *cur, struct buffer *buf);
 

@@ -241,13 +241,13 @@
  * least one (1) 106-octet IPv6 datagram per attached SED".
  *
  * The defines below tell how many small (i.e. up to the big packet
- * threshold) packets per sleepy child and big (i.e. over the big 
- * packet threshold) packets total we buffer in the indirect TX 
+ * threshold) packets per sleepy child and big (i.e. over the big
+ * packet threshold) packets total we buffer in the indirect TX
  * queue. The minimum values are 1 for both, but here we use larger
  * value for better performance.
  */
 #define THREAD_INDIRECT_BIG_PACKETS_TOTAL 10
-#define THREAD_INDIRECT_SMALL_PACKETS_PER_CHILD 2
+#define THREAD_INDIRECT_SMALL_PACKETS_PER_CHILD 3
 
 /**
  * Maximum number of MTD children, default 16
@@ -325,6 +325,40 @@
  * When BBR is started, router address is requested from leader with following status
  */
 #define THREAD_BBR_ROUTER_ID_REQUEST_STATUS THREAD_COAP_STATUS_TLV_HAVE_CHILD_ID_REQUEST
+
+/* Border Router IPv6 neighbour and destination cache configuration
+ * Number of neighbor cache entries assuming 250 thread devices (worst case) connecting to cloud service.
+ * Six entries reserved for backbone devices.
+ */
+#define THREAD_BBR_IPV6_NEIGHBOUR_CACHE_SIZE                256
+#define THREAD_BBR_IPV6_NEIGHBOUR_CACHE_SHORT_TERM          128
+#define THREAD_BBR_IPV6_NEIGHBOUR_CACHE_LONG_TERM           32
+#define THREAD_BBR_IPV6_NEIGHBOUR_CACHE_LIFETIME            600
+
+/* Router IPv6 neighbour and destination cache configuration */
+#define THREAD_ROUTER_IPV6_NEIGHBOUR_CACHE_SIZE             128
+#define THREAD_ROUTER_IPV6_NEIGHBOUR_CACHE_SHORT_TERM       64
+#define THREAD_ROUTER_IPV6_NEIGHBOUR_CACHE_LONG_TERM        8
+#define THREAD_ROUTER_IPV6_NEIGHBOUR_CACHE_LIFETIME         600
+#define THREAD_ROUTER_IPV6_DESTINATION_CACHE_SIZE           32
+#define THREAD_ROUTER_IPV6_DESTINATION_CACHE_SHORT_TERM     16
+#define THREAD_ROUTER_IPV6_DESTINATION_CACHE_LONG_TERM      4
+#define THREAD_ROUTER_IPV6_DESTINATION_CACHE_LIFETIME       600
+
+/* End device IPv6 neighbour and destination cache configuration */
+#define THREAD_END_DEVICE_IPV6_NEIGHBOUR_CACHE_SIZE         32
+#define THREAD_END_DEVICE_IPV6_NEIGHBOUR_CACHE_SHORT_TERM   16
+#define THREAD_END_DEVICE_IPV6_NEIGHBOUR_CACHE_LONG_TERM    4
+#define THREAD_END_DEVICE_IPV6_NEIGHBOUR_CACHE_LIFETIME     600
+#define THREAD_END_DEVICE_IPV6_DESTINATION_CACHE_SIZE       16
+#define THREAD_END_DEVICE_IPV6_DESTINATION_CACHE_SHORT_TERM 8
+#define THREAD_END_DEVICE_IPV6_DESTINATION_CACHE_LONG_TERM  4
+#define THREAD_END_DEVICE_IPV6_DESTINATION_CACHE_LIFETIME   600
+
+/*
+ * Timeout to solicit address from DHCP if previous request fails.
+ */
+#define THREAD_MAINTENANCE_TIMER_INTERVAL 300
 
 /**
  * Build time flag to enable THCI special traces for test harness purposes

@@ -15,6 +15,7 @@
  * limitations under the License.
  */
 
+#if defined(MBED_CONF_RTOS_PRESENT)
 #include "mbed.h"
 #include "TCPSocket.h"
 #include "greentea-client/test_env.h"
@@ -26,14 +27,20 @@ using namespace utest::v1;
 
 void TCPSOCKET_CONNECT_INVALID()
 {
+    SKIP_IF_TCP_UNSUPPORTED();
     TCPSocket sock;
-    TEST_ASSERT_EQUAL(NSAPI_ERROR_OK, sock.open(get_interface()));
+    TEST_ASSERT_EQUAL(NSAPI_ERROR_OK, sock.open(NetworkInterface::get_default_instance()));
 
-    TEST_ASSERT(sock.connect(NULL, 9) < 0);
-    TEST_ASSERT(sock.connect("", 9) < 0);
-    TEST_ASSERT(sock.connect("", 0) < 0);
-    TEST_ASSERT(sock.connect(MBED_CONF_APP_ECHO_SERVER_ADDR, 0) < 0);
-    TEST_ASSERT_EQUAL(NSAPI_ERROR_OK, sock.connect(MBED_CONF_APP_ECHO_SERVER_ADDR, 9));
+    SocketAddress address;
+    address.set_port(9);
+
+    TEST_ASSERT_FALSE(address.set_ip_address(NULL));
+
+    // Valid address for the final check
+    TEST_ASSERT_EQUAL(NSAPI_ERROR_OK, NetworkInterface::get_default_instance()->gethostbyname(ECHO_SERVER_ADDR, &address));
+    address.set_port(ECHO_SERVER_DISCARD_PORT);
+    TEST_ASSERT_EQUAL(NSAPI_ERROR_OK, sock.connect(address));
 
     TEST_ASSERT_EQUAL(NSAPI_ERROR_OK, sock.close());
 }
+#endif // defined(MBED_CONF_RTOS_PRESENT)

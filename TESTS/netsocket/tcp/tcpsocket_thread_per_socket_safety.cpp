@@ -15,6 +15,7 @@
  * limitations under the License.
  */
 
+#if defined(MBED_CONF_RTOS_PRESENT)
 #include "mbed.h"
 #include "TCPSocket.h"
 #include "greentea-client/test_env.h"
@@ -27,9 +28,9 @@ using namespace utest::v1;
 namespace {
 static const int SIGNAL_SIGIO1 = 0x1;
 static const int SIGNAL_SIGIO2 = 0x2;
-static const int SIGIO_TIMEOUT = 5000; //[ms]
+static const int SIGIO_TIMEOUT = 20000; //[ms]
 
-Thread thread;
+Thread thread(osPriorityNormal, tcp_global::TCP_OS_STACK_SIZE);
 volatile bool running = true;
 }
 
@@ -47,11 +48,11 @@ static void check_const_len_rand_sequence()
 {
     TCPSocket sock;
     tcpsocket_connect_to_echo_srv(sock);
-    sock.sigio(callback(_sigio_handler1, Thread::gettid()));
+    sock.sigio(callback(_sigio_handler1, ThisThread::get_id()));
 
     static const int BUFF_SIZE = 10;
-    char rx_buff[BUFF_SIZE] = {0};
-    char tx_buff[BUFF_SIZE] = {0};
+    static char rx_buff[BUFF_SIZE] = {0};
+    static char tx_buff[BUFF_SIZE] = {0};
 
 
     int bytes2process;
@@ -69,7 +70,7 @@ static void check_const_len_rand_sequence()
                 }
                 continue;
             } else if (sent < 0) {
-                printf("network error %d\n", sent);
+                tr_error("network error %d", sent);
                 TEST_FAIL();
                 goto END;
             }
@@ -82,7 +83,7 @@ static void check_const_len_rand_sequence()
             if (recvd == NSAPI_ERROR_WOULD_BLOCK) {
                 continue;
             } else if (recvd < 0) {
-                printf("network error %d\n", recvd);
+                tr_error("network error %d", recvd);
                 TEST_FAIL();
                 goto END;
             }
@@ -104,11 +105,11 @@ static void check_var_len_rand_sequence()
 {
     TCPSocket sock;
     tcpsocket_connect_to_echo_srv(sock);
-    sock.sigio(callback(_sigio_handler2, Thread::gettid()));
+    sock.sigio(callback(_sigio_handler2, ThisThread::get_id()));
 
     static const int BUFF_SIZE = 1001;
-    char rx_buff[BUFF_SIZE];
-    char tx_buff[BUFF_SIZE];
+    static char rx_buff[BUFF_SIZE];
+    static char tx_buff[BUFF_SIZE];
     static const int pkt_size_diff = 100;
 
     int bytes2process;
@@ -126,7 +127,7 @@ static void check_var_len_rand_sequence()
                 }
                 continue;
             } else if (sent < 0) {
-                printf("[%02d] network error %d\n", i, sent);
+                tr_error("[%02d] network error %d", i, sent);
                 TEST_FAIL();
                 goto END;
             }
@@ -139,7 +140,7 @@ static void check_var_len_rand_sequence()
             if (recvd == NSAPI_ERROR_WOULD_BLOCK) {
                 continue;
             } else if (recvd < 0) {
-                printf("[%02d] network error %d\n", i, recvd);
+                tr_error("[%02d] network error %d", i, recvd);
                 TEST_FAIL();
                 goto END;
             }
@@ -159,6 +160,7 @@ END:
 
 void TCPSOCKET_THREAD_PER_SOCKET_SAFETY()
 {
+    SKIP_IF_TCP_UNSUPPORTED();
     thread.start(callback(check_const_len_rand_sequence));
 
     check_var_len_rand_sequence();
@@ -166,3 +168,4 @@ void TCPSOCKET_THREAD_PER_SOCKET_SAFETY()
     running = false;
     thread.join();
 }
+#endif // defined(MBED_CONF_RTOS_PRESENT)

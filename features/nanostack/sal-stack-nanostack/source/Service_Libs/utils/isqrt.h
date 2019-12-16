@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2015, 2017, Arm Limited and affiliates.
+ * Copyright (c) 2014-2015, 2017-2018, Arm Limited and affiliates.
  * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -25,6 +25,6 @@
  * \return square root of the number
  */
 
-uint32_t isqrt32 (uint32_t n);
+uint32_t isqrt32(uint32_t n);
 
 #endif /* ISQRT_H_ */

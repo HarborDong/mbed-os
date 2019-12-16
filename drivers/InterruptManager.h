@@ -1,5 +1,6 @@
 /* mbed Microcontroller Library
- * Copyright (c) 2006-2013 ARM Limited
+ * Copyright (c) 2006-2019 ARM Limited
+ * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,7 +24,11 @@
 #include <string.h>
 
 namespace mbed {
-/** \addtogroup drivers */
+/**
+ * \defgroup drivers_InterruptManager InterruptManager class
+ * \ingroup drivers-public-api-gpio
+ * @{
+ */
 
 /** Use this singleton if you need to chain interrupt handlers.
  *  @deprecated Do not use this class. This class is not part of the public API of mbed-os and is being removed in the future.
@@ -53,7 +58,6 @@ namespace mbed {
  *     InterruptManager::get()->add_handler(handler, TIMER3_IRQn);
  * }
  * @endcode
- * @ingroup drivers
  */
 class InterruptManager : private NonCopyable<InterruptManager> {
 public:
@@ -166,8 +170,10 @@ public:
                           "public API of mbed-os and is being removed in the future.")
     bool remove_handler(pFunctionPointer_t handler, IRQn_Type irq);
 
+#if !defined(DOXYGEN_ONLY)
 private:
     InterruptManager();
+
     ~InterruptManager();
 
     void lock();
@@ -198,7 +204,10 @@ private:
     CallChain *_chains[NVIC_NUM_VECTORS];
     static InterruptManager *_instance;
     PlatformMutex _mutex;
+#endif
 };
+
+/** @}*/
 
 } // namespace mbed
 

@@ -21,7 +21,7 @@
 
 #if !DEVICE_LPTICKER
 #error [NOT_SUPPORTED] Low power ticker not supported for this target
-#endif
+#else
 
 using utest::v1::Case;
 
@@ -79,7 +79,7 @@ void test_multi_ticker(void)
         ticker[i].attach_us(callback(increment_multi_counter), MULTI_TICKER_TIME_MS * 1000);
     }
 
-    Thread::wait(MULTI_TICKER_TIME_MS + extra_wait);
+    ThisThread::sleep_for(MULTI_TICKER_TIME_MS + extra_wait);
     TEST_ASSERT_EQUAL(TICKER_COUNT, multi_counter);
 
     for (int i = 0; i < TICKER_COUNT; i++) {
@@ -95,7 +95,7 @@ void test_multi_ticker(void)
         ticker[i].attach_us(callback(increment_multi_counter), (MULTI_TICKER_TIME_MS + i) * 1000);
     }
 
-    Thread::wait(MULTI_TICKER_TIME_MS + TICKER_COUNT + extra_wait);
+    ThisThread::sleep_for(MULTI_TICKER_TIME_MS + TICKER_COUNT + extra_wait);
     TEST_ASSERT_EQUAL(TICKER_COUNT, multi_counter);
 
     for (int i = 0; i < TICKER_COUNT; i++) {
@@ -141,22 +141,20 @@ void test_multi_call_time(void)
 void test_detach(void)
 {
     LowPowerTicker ticker;
-    int32_t ret;
+    bool ret;
     const float ticker_time_s = 0.1f;
     const uint32_t wait_time_ms = 500;
     Semaphore sem(0, 1);
 
     ticker.attach(callback(sem_release, &sem), ticker_time_s);
 
-    ret = sem.wait();
-    TEST_ASSERT_TRUE(ret > 0);
+    sem.acquire();
 
-    ret = sem.wait();
+    sem.acquire();
     ticker.detach(); /* cancel */
-    TEST_ASSERT_TRUE(ret > 0);
 
-    ret = sem.wait(wait_time_ms);
-    TEST_ASSERT_EQUAL(0, ret);
+    ret = sem.try_acquire_for(wait_time_ms);
+    TEST_ASSERT_FALSE(ret);
 }
 
 /** Test single callback time via attach
@@ -220,7 +218,7 @@ Case cases[] = {
 
 utest::v1::status_t greentea_test_setup(const size_t number_of_cases)
 {
-    GREENTEA_SETUP(test_timeout, "timing_drift_auto");
+    GREENTEA_SETUP(test_timeout, "default_auto");
     return utest::v1::greentea_test_setup_handler(number_of_cases);
 }
 
@@ -230,3 +228,5 @@ int main()
 {
     utest::v1::Harness::run(specification);
 }
+
+#endif // !DEVICE_LPTICKER

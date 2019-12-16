@@ -1,5 +1,7 @@
 /* mbed Microcontroller Library
- * Copyright (c) 2017 ARM Limited
+ * Copyright (c) 2017 Arm Limited
+ *
+ * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,8 +20,10 @@
 
 #include "cellular/onboard_modem_api.h"
 #include "gpio_api.h"
-#include "platform/mbed_wait_api.h"
+#include "platform/mbed_thread.h"
 #include "PinNames.h"
+
+#define WAIT_AFTER_POWR_CHANGED	(1000)	// [msec.]
 
 #if MODEM_ON_BOARD
 
@@ -28,43 +32,57 @@ static void press_power_button(int time_ms)
     gpio_t gpio;
 
     gpio_init_out_ex(&gpio, PWRKEY, 1);
-    gpio_write(&gpio, 1);
-    wait_ms(time_ms);
+    thread_sleep_for(time_ms);
     gpio_write(&gpio, 0);
 }
 
 void onboard_modem_init()
 {
     gpio_t gpio;
-    // start with modem disabled
-    gpio_init_out_ex(&gpio, RESET_MODULE, 0);
-    gpio_init_in_ex(&gpio, MDMSTAT, PullUp);
-    gpio_init_out_ex(&gpio, MDMDTR,       0);
-    gpio_init_out_ex(&gpio, M_POWR, 1);
 
-//    gpio_write(&gpio, M_POWR, 1);
-    wait_ms(500);
+    // Power Supply
+    gpio_init_out_ex(&gpio, M_POWR, 0);
+    // Turn On/Off
+    gpio_init_out_ex(&gpio, PWRKEY, 0);
+    gpio_init_out_ex(&gpio, RESET_MODULE, 0);
+    // Status Indication
+    gpio_init_in_ex(&gpio, MDMSTAT, PullUp);
+    // Main UART Interface
+    gpio_init_out_ex(&gpio, MDMDTR, 0);
+
+    thread_sleep_for(WAIT_AFTER_POWR_CHANGED);
 }
 
 void onboard_modem_deinit()
 {
-//    wio3g_mdm_powerOff();
+    gpio_t gpio;
+
+    // Power supply OFF
+    gpio_init_out_ex(&gpio, M_POWR, 0);
+    thread_sleep_for(WAIT_AFTER_POWR_CHANGED);
 }
 
 void onboard_modem_power_up()
 {
-    /* keep the power line HIGH for 200 milisecond */
+    gpio_t gpio;
+
+    // Power supply ON
+    gpio_init_out_ex(&gpio, M_POWR, 1);
+    thread_sleep_for(WAIT_AFTER_POWR_CHANGED);
+
+    // Turn on
+    thread_sleep_for(100);
     press_power_button(200);
-    /* give modem a little time to respond */
-    wait_ms(100);
 }
 
 void onboard_modem_power_down()
 {
-    /* keep the power line low for 1 second */
-//    press_power_button(1000);
+    gpio_t gpio;
 
-//    gpio_write(&mpowr, M_POWR, 0);
+    // Power supply OFF
+    gpio_init_out_ex(&gpio, M_POWR, 0);
+    thread_sleep_for(WAIT_AFTER_POWR_CHANGED);
 }
 #endif //MODEM_ON_BOARD
+
 #endif //MBED_CONF_NSAPI_PRESENT

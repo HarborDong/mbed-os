@@ -19,33 +19,21 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
  */
+
+/** \addtogroup storage */
+/** @{*/
+
 #ifndef MBED_PROFILING_BLOCK_DEVICE_H
 #define MBED_PROFILING_BLOCK_DEVICE_H
 
 #include "BlockDevice.h"
-#include "mbed.h"
+
+namespace mbed {
 
 
 /** Block device for measuring storage operations of another block device
- *
- *  @code
- *  #include "mbed.h"
- *  #include "HeapBlockDevice.h"
- *  #include "ProfilingBlockDevice.h"
- *
- *  // Create a heap block device and profiling block device
- *  HeapBlockDevice mem(64*512, 512);
- *  ProfilingBlockDevice profiler(&mem);
- *
- *  // do block device work....
- *
- *  printf("read count: %lld\n", profiler.get_read_count());
- *  printf("program count: %lld\n", profiler.get_program_count());
- *  printf("erase count: %lld\n", profiler.get_erase_count());
- *  @endcode
  */
-class ProfilingBlockDevice : public BlockDevice
-{
+class ProfilingBlockDevice : public BlockDevice {
 public:
     /** Lifetime of the memory block device
      *
@@ -82,7 +70,7 @@ public:
      *  @param buffer   Buffer to read blocks into
      *  @param addr     Address of block to begin reading from
      *  @param size     Size to read in bytes, must be a multiple of read block size
-     *  @return         0 on success, negative error code on failure
+     *  @return         0 on success or a negative error code on failure
      */
     virtual int read(void *buffer, bd_addr_t addr, bd_size_t size);
 
@@ -93,7 +81,7 @@ public:
      *  @param buffer   Buffer of data to write to blocks
      *  @param addr     Address of block to begin writing to
      *  @param size     Size to write in bytes, must be a multiple of program block size
-     *  @return         0 on success, negative error code on failure
+     *  @return         0 on success or a negative error code on failure
      */
     virtual int program(const void *buffer, bd_addr_t addr, bd_size_t size);
 
@@ -104,7 +92,7 @@ public:
      *
      *  @param addr     Address of block to begin erasing
      *  @param size     Size to erase in bytes, must be a multiple of erase block size
-     *  @return         0 on success, negative error code on failure
+     *  @return         0 on success or a negative error code on failure
      */
     virtual int erase(bd_addr_t addr, bd_size_t size);
 
@@ -175,6 +163,12 @@ public:
      */
     bd_size_t get_erase_count() const;
 
+    /** Get the BlockDevice class type.
+     *
+     *  @return         A string represent the BlockDevice class type.
+     */
+    virtual const char *get_type() const;
+
 private:
     BlockDevice *_bd;
     bd_size_t _read_count;
@@ -182,5 +176,13 @@ private:
     bd_size_t _erase_count;
 };
 
+} // namespace mbed
+
+// Added "using" for backwards compatibility
+#ifndef MBED_NO_GLOBAL_USING_DIRECTIVE
+using mbed::ProfilingBlockDevice;
+#endif
 
 #endif
+
+/** @}*/

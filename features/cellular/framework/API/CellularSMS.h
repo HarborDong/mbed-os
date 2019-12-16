@@ -18,6 +18,8 @@
 #ifndef CELLULAR_SMS_H_
 #define CELLULAR_SMS_H_
 
+#if MBED_CONF_CELLULAR_USE_SMS
+
 #include "Callback.h"
 #include "nsapi_types.h"
 
@@ -34,6 +36,11 @@ const uint16_t SMS_MAX_SIZE_GSM7_SINGLE_SMS_SIZE = 160;
 const uint16_t SMS_SIM_WAIT_TIME_MILLISECONDS = 200;
 
 const int SMS_ERROR_MULTIPART_ALL_PARTS_NOT_READ = -5001;
+
+/**
+ * @addtogroup cellular
+ * @{
+ */
 
 /**
  *  Class CellularSMS
@@ -57,6 +64,11 @@ public:
         CellularSMSMmodeText
     };
 
+    enum CellularSMSEncoding {
+        CellularSMSEncoding7Bit,
+        CellularSMSEncoding8Bit,
+    };
+
     /** Does all the necessary initializations needed for receiving and sending SMS.
      *
      *  @param mode          enumeration for choosing the correct mode: text/pdu
@@ -64,7 +76,8 @@ public:
      *                       NSAPI_ERROR_NO_MEMORY on memory failure
      *                       NSAPI_ERROR_DEVICE_ERROR on other failures
      */
-    virtual nsapi_error_t initialize(CellularSMSMmode mode) = 0;
+    virtual nsapi_error_t initialize(CellularSMSMmode mode,
+                                     CellularSMSEncoding encoding = CellularSMSEncoding::CellularSMSEncoding7Bit) = 0;
 
     /** Send the SMS with the given parameters
      *
@@ -162,6 +175,12 @@ public:
     virtual void set_extra_sim_wait_time(int sim_wait_time) = 0;
 };
 
+/**
+ * @}
+ */
+
 } // namespace mbed
+
+#endif // MBED_CONF_CELLULAR_USE_SMS
 
 #endif // CELLULAR_SMS_H_

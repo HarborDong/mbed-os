@@ -13,6 +13,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+#if !defined(MBED_CONF_RTOS_PRESENT)
+#error [NOT_SUPPORTED] kernel tick count test cases require a RTOS to run.
+#else
+
 #include "greentea-client/test_env.h"
 #include "utest/utest.h"
 #include "unity/unity.h"
@@ -107,7 +111,7 @@ Case cases[] = {
 
 utest::v1::status_t greentea_test_setup(const size_t number_of_cases)
 {
-    GREENTEA_SETUP(10, "timing_drift_auto");
+    GREENTEA_SETUP(10, "default_auto");
     return utest::v1::greentea_test_setup_handler(number_of_cases);
 }
 
@@ -117,3 +121,4 @@ int main()
 {
     return !utest::v1::Harness::run(specification);
 }
+#endif // !defined(MBED_CONF_RTOS_PRESENT)

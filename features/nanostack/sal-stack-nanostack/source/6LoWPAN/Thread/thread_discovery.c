@@ -46,7 +46,7 @@
 #include "6LoWPAN/Thread/thread_joiner_application.h"
 #include "6LoWPAN/Thread/thread_management_internal.h"
 #include "6LoWPAN/Thread/thread_bootstrap.h"
-#include "6LoWPAN/Thread/thread_extension.h"
+#include "6LoWPAN/Thread/thread_ccm.h"
 #include "Service_Libs/mle_service/mle_service_api.h"
 #include "MLE/mle.h"
 #include "MLE/mle_tlv.h"
@@ -65,7 +65,7 @@ typedef struct {
     uint8_t type;
     uint8_t *data;
     uint16_t length;
-}mescop_tlv_t;
+} mescop_tlv_t;
 
 #define TRACE_GROUP "tdis"
 
@@ -83,9 +83,9 @@ typedef struct {
     thread_discovery_ready_cb *response_cb;
     uint8_t active_channel;
     uint8_t channel_page;
-    bool waiting_response:1;
-    bool joiner_flag:1;
-    bool native_commisioner_scan:1;
+    bool waiting_response: 1;
+    bool joiner_flag: 1;
+    bool native_commisioner_scan: 1;
     uint8_t filter_tlv_length; //Optional Filter data length
     uint8_t filter_tlv_data[]; //Do not anything after this definition
 } thread_discovery_request_info_t;
@@ -100,7 +100,7 @@ typedef struct {
     uint64_t active_time_stamp;
     thread_announce_scan_ready_cb *response_cb;
     announce_discovery_response_t *network;
-    bool waiting_response:1;
+    bool waiting_response: 1;
 } thread_announce_request_info_t;
 
 
@@ -142,7 +142,7 @@ static discovery_response_list_t *thread_discover_response_msg_get_discover_from
 static int stringlen(const char *s, int n)
 {
     char *end = memchr(s, 0, n);
-    return end?end-s:n;
+    return end ? end - s : n;
 }
 
 static void thread_discover_timer_trig(void)
@@ -154,9 +154,9 @@ static void thread_discover_timer_trig(void)
     thread_discover_timer_active = true;
 }
 
-static thread_discovery_request_info_t * thread_discovery_request_allocate(thread_discover_reques_t *scan_request, thread_discovery_ready_cb *response_cb)
+static thread_discovery_request_info_t *thread_discovery_request_allocate(thread_discover_reques_t *scan_request, thread_discovery_ready_cb *response_cb)
 {
-    thread_discovery_request_info_t * discover_request = ns_dyn_mem_temporary_alloc(sizeof(thread_discovery_request_info_t) + scan_request->filter_tlv_length);
+    thread_discovery_request_info_t *discover_request = ns_dyn_mem_temporary_alloc(sizeof(thread_discovery_request_info_t) + scan_request->filter_tlv_length);
     if (discover_request) {
         discover_request->waiting_response = false;
         discover_request->active_timer = 0;
@@ -176,9 +176,9 @@ static thread_discovery_request_info_t * thread_discovery_request_allocate(threa
 }
 
 
-static thread_announce_request_info_t * thread_announce_discovery_request_allocate(thread_announce_discover_reques_t *scan_request, thread_announce_scan_ready_cb *response_cb)
+static thread_announce_request_info_t *thread_announce_discovery_request_allocate(thread_announce_discover_reques_t *scan_request, thread_announce_scan_ready_cb *response_cb)
 {
-    thread_announce_request_info_t * discover_request = ns_dyn_mem_temporary_alloc(sizeof(thread_announce_request_info_t));
+    thread_announce_request_info_t *discover_request = ns_dyn_mem_temporary_alloc(sizeof(thread_announce_request_info_t));
     if (discover_request) {
         discover_request->waiting_response = false;
         discover_request->active_timer = 0;
@@ -207,7 +207,7 @@ static bool thread_discovery_server_msg_buffer_allocate(thread_discovery_class_t
         return false;
     }
     class->msg_buffers = msg_buffer;
-    for (uint8_t i = 0; i< 4; i++) {
+    for (uint8_t i = 0; i < 4; i++) {
         ns_list_add_to_start(&class->srv_respose_msg_buffers, msg_buffer++);
     }
     return true;
@@ -319,7 +319,7 @@ static void thread_discovery_prepare(protocol_interface_info_entry_t *interface,
     mac_helper_beacon_payload_reallocate(interface, 0); // No beacons for thread
     mac_data_poll_init(interface);
     mac_helper_mac16_address_set(interface, 0xffff);
-    mac_helper_mac64_set(interface,discovery->temporary_mac64);
+    mac_helper_mac64_set(interface, discovery->temporary_mac64);
     thread_set_link_local_address(interface); // only to generate IID
     discovery->active_timer = 1;
     discovery->waiting_response = false;
@@ -339,16 +339,15 @@ static void thread_announce_discovery_prepare(protocol_interface_info_entry_t *i
     thread_discover_timer_trig();
 }
 
-static bool thread_discovery_proces_ready(thread_discovery_request_info_t *discovery) {
+static bool thread_discovery_proces_ready(thread_discovery_request_info_t *discovery)
+{
 
     //Get next free channel
     uint8_t i;
     uint32_t mask = 1;
 
-    for (i=0; i<32; i++)
-    {
-        if (discovery->channel_mask & mask)
-        {
+    for (i = 0; i < 32; i++) {
+        if (discovery->channel_mask & mask) {
             discovery->channel_mask &= ~mask;
             discovery->active_channel = i;
             discovery->channel_page = 0; //Support only chnnel page 0
@@ -359,16 +358,15 @@ static bool thread_discovery_proces_ready(thread_discovery_request_info_t *disco
     return true;
 }
 
-static bool thread_announce_discovery_process_ready(thread_announce_request_info_t *discovery) {
+static bool thread_announce_discovery_process_ready(thread_announce_request_info_t *discovery)
+{
 
     //Get next free channel
     uint8_t i;
     uint32_t mask = 0x80000000;
 
-    for (i=0; i<32; i++)
-    {
-        if (discovery->channel_mask & mask)
-        {
+    for (i = 0; i < 32; i++) {
+        if (discovery->channel_mask & mask) {
             discovery->channel_mask &= ~mask;
             discovery->active_channel = i;
             return false;
@@ -402,8 +400,8 @@ static void thread_discovery_link_activate(protocol_interface_info_entry_t *inte
     start_req.BeaconOrder = 0x0f;
     start_req.SuperframeOrder = 0x0f;
 
-    if( interface->mac_api ){
-        interface->mac_api->mlme_req(interface->mac_api, MLME_START, (void*)&start_req);
+    if (interface->mac_api) {
+        interface->mac_api->mlme_req(interface->mac_api, MLME_START, (void *)&start_req);
     }
 }
 
@@ -411,15 +409,120 @@ static uint16_t thread_discover_tlv_get(uint8_t version, bool dynamic_bit)
 {
     uint16_t thread_discover_tlv = 0;
 
-    thread_discover_tlv |= (uint16_t) (version << 12);
+    thread_discover_tlv |= (uint16_t)(version << 12);
 
     if (dynamic_bit) {
-        thread_discover_tlv |= (uint16_t) (1 << 11);
+        thread_discover_tlv |= (uint16_t)(1 << 11);
     }
 
     return thread_discover_tlv;
 }
 
+
+#ifdef HAVE_THREAD_V2
+static uint8_t thread_discovery_ccm_response_len(protocol_interface_info_entry_t *cur)
+{
+    uint8_t length = 0;
+    uint8_t domain_name_len;
+    // AE port
+    if (!cur || !cur->thread_info->ccm_info) {
+        return 0;
+    }
+    if (cur->thread_info->ccm_info->relay_port_ae) {
+        length += 4;
+    }
+    // NMK port
+    if (cur->thread_info->ccm_info->relay_port_nmkp) {
+        length += 4;
+    }
+    /* Thread 1.2 CCM add-ons */
+    if (cur->thread_info->version >= THREAD_VERSION_1_2 && thread_info(cur)->ccm_credentials_ptr) {
+        // Calculate also following optional TLV's:
+        // Thread domain name TLV
+        domain_name_len = thread_ccm_thread_name_length_get(cur);
+        if (domain_name_len) {
+            length += domain_name_len + 2;
+        }
+        // AE steering data
+        // NMKP Steering Data
+    }
+    return length;
+}
+
+static uint8_t *thread_discovery_ccm_response_write(protocol_interface_info_entry_t *cur, uint8_t *ptr)
+{
+    if (!cur || !cur->thread_info->ccm_info) {
+        return ptr;
+    }
+    // AE port
+    if (cur->thread_info->ccm_info->relay_port_ae) {
+        ptr = thread_meshcop_tlv_data_write_uint16(ptr, MESHCOP_TLV_AE_PORT, cur->thread_info->ccm_info->relay_port_ae);
+    }
+    // NMK port
+    if (cur->thread_info->ccm_info->relay_port_nmkp) {
+        ptr = thread_meshcop_tlv_data_write_uint16(ptr, MESHCOP_TLV_NMKP_PORT, cur->thread_info->ccm_info->relay_port_nmkp);
+    }
+    /* Thread 1.2 CCM add-ons */
+    if (cur->thread_info->version >= THREAD_VERSION_1_2 && thread_info(cur)->ccm_credentials_ptr) {
+        // Thread domain name TLV
+        if (thread_ccm_thread_name_length_get(cur)) {
+            ptr = thread_meshcop_tlv_data_write(ptr, MESHCOP_TLV_DOMAIN_NAME, thread_ccm_thread_name_length_get(cur), thread_ccm_thread_name_ptr_get(cur));
+        }
+        // Build also following optional TLV's, when supported:
+        // AE steering data
+        // NMKP Steering Data
+    }
+    return ptr;
+}
+void thread_discovery_ccm_response_read(discovery_response_list_t *nwk_info, uint16_t discover_response_tlv, uint8_t *data_ptr, uint16_t data_len)
+{
+    uint8_t domain_data_len;
+    uint8_t *domain_data_ptr;
+
+    domain_data_len = thread_meshcop_tlv_find(data_ptr, data_len, MESHCOP_TLV_DOMAIN_NAME, &domain_data_ptr);
+    if (domain_data_len > 16) {
+        domain_data_len = 0;
+    }
+
+    if (domain_data_len) {
+        memcpy(nwk_info->ccm_info.domain_name, domain_data_ptr, domain_data_len);
+    }
+
+    thread_meshcop_tlv_data_get_uint16(data_ptr, data_len, MESHCOP_TLV_AE_PORT, &nwk_info->ccm_info.ae_port);
+    thread_meshcop_tlv_data_get_uint16(data_ptr, data_len, MESHCOP_TLV_NMKP_PORT, &nwk_info->ccm_info.nmk_port);
+    nwk_info->ccm_info.ccm_supported = (discover_response_tlv >> 10) & 1;
+}
+
+void thread_discovery_ccm_info_write(uint16_t *data, uint8_t version, uint16_t securityPolicy)
+{
+    if (version == 3 && !(securityPolicy & THREAD_SECURITY_POLICY_CCM_DISABLED)) {
+        *data |= (uint16_t)(1 << 10);
+    }
+}
+
+bool thread_discovery_ccm_joining_enabled(int8_t interface_id)
+{
+    protocol_interface_info_entry_t *cur = protocol_stack_interface_info_get_by_id(interface_id);
+
+    if (!cur || !cur->thread_info->ccm_info) {
+        return false;
+    }
+    if (cur->thread_info->ccm_info->relay_port_ae ||
+            cur->thread_info->ccm_info->relay_port_nmkp) {
+        tr_warn("Commercial joiner router enabled");
+        return true;
+    }
+    return false;
+}
+
+#else
+#define thread_discovery_ccm_response_len(cur) (0)
+#define thread_discovery_ccm_response_write(cur, ptr) (ptr)
+#define thread_discovery_ccm_response_read(nwk_info, discover_response_tlv, data_ptr, data_len)
+#define thread_discovery_ccm_info_write(data, version, securityPolicy)
+#define thread_discovery_ccm_joining_enabled(interface_id) (false)
+
+#endif
 
 static int thread_discovery_request_send(thread_discovery_class_t *class, thread_discovery_request_info_t *discovery)
 {
@@ -446,7 +549,7 @@ static int thread_discovery_request_send(thread_discovery_class_t *class, thread
         ptr += discovery->filter_tlv_length;
     }
 
-    if (mle_service_update_length_by_ptr(buf_id,ptr)!= 0) {
+    if (mle_service_update_length_by_ptr(buf_id, ptr) != 0) {
         tr_debug("Buffer overflow at message write");
     }
 
@@ -481,15 +584,15 @@ static int thread_discovery_announce_request_send(thread_discovery_class_t *clas
     uint8_t *ptr = mle_service_get_data_pointer(buf_id);
 
     uint8_t channel_tlv[3];
-    ptr = thread_meshcop_tlv_data_write_uint64(ptr,MLE_TYPE_ACTIVE_TIMESTAMP, discovery->active_time_stamp);
-    ptr = thread_meshcop_tlv_data_write_uint16(ptr,MLE_TYPE_PANID, discovery->pan_id);
+    ptr = thread_meshcop_tlv_data_write_uint64(ptr, MLE_TYPE_ACTIVE_TIMESTAMP, discovery->active_time_stamp);
+    ptr = thread_meshcop_tlv_data_write_uint16(ptr, MLE_TYPE_PANID, discovery->pan_id);
     channel_tlv[0] = 0;
     common_write_16_bit(discovery->active_channel, &channel_tlv[1]);
-    ptr = thread_meshcop_tlv_data_write(ptr,MLE_TYPE_CHANNEL, 3, channel_tlv);
+    ptr = thread_meshcop_tlv_data_write(ptr, MLE_TYPE_CHANNEL, 3, channel_tlv);
 
 
 
-    if (mle_service_update_length_by_ptr(buf_id,ptr)!= 0) {
+    if (mle_service_update_length_by_ptr(buf_id, ptr) != 0) {
         tr_debug("Buffer overflow at message write");
     }
 
@@ -506,9 +609,6 @@ static int thread_discovery_announce_request_send(thread_discovery_class_t *clas
     return 0;
 }
 
-
-
-
 static int thread_discovery_response_send(thread_discovery_class_t *class, thread_discovery_response_msg_t *msg_buffers)
 {
     link_configuration_s *linkConfiguration = thread_joiner_application_get_config(class->interface_id);
@@ -524,13 +624,13 @@ static int thread_discovery_response_send(thread_discovery_class_t *class, threa
 
     // Calculate length
     uint16_t message_length = 16; // Default data to response always
-    message_length += stringlen((char*)&linkConfiguration->name, 16);
+    message_length += stringlen((char *)&linkConfiguration->name, 16);
 
     // [Joiner UDP Port TLV]
     if (server_data.joiner_router_enabled && server_data.joiner_router_port) {
         message_length += 4;
         // [Steering Data TLV]
-        if (cur->thread_info->registered_commissioner.commissioner_valid && cur->thread_info->registered_commissioner.steering_data_len){
+        if (cur->thread_info->registered_commissioner.commissioner_valid && cur->thread_info->registered_commissioner.steering_data_len) {
             message_length += cur->thread_info->registered_commissioner.steering_data_len + 2;
         }
     }
@@ -540,7 +640,7 @@ static int thread_discovery_response_send(thread_discovery_class_t *class, threa
         message_length += 4;
     }
 
-    message_length +=  thread_extension_discover_response_len(cur);
+    message_length +=  thread_discovery_ccm_response_len(cur);
 
     uint16_t buf_id = mle_service_msg_allocate(class->interface_id, message_length + 2, false, MLE_COMMAND_DISCOVERY_RESPONSE);
     if (buf_id == 0) {
@@ -550,7 +650,7 @@ static int thread_discovery_response_send(thread_discovery_class_t *class, threa
     //SET ll64 from euid64
     uint8_t *ll64 = mle_service_get_msg_destination_address_pointer(buf_id);
     memcpy(ll64, ADDR_LINK_LOCAL_PREFIX, 8);
-    memcpy(ll64 + 8,msg_buffers->extentedAddress , 8);
+    memcpy(ll64 + 8, msg_buffers->extentedAddress, 8);
     //No link layer security and no mle security.
     mle_service_msg_update_security_params(buf_id, 0, 0, 0);
     uint8_t *ptr = mle_service_get_data_pointer(buf_id);
@@ -559,11 +659,11 @@ static int thread_discovery_response_send(thread_discovery_class_t *class, threa
     *ptr++ = message_length;
     uint16_t discover_response_tlv = thread_discover_tlv_get(class->version, (linkConfiguration->securityPolicy & SECURITY_POLICY_NATIVE_COMMISSIONING_ALLOWED));
 
-    thread_extension_discover_response_tlv_write(&discover_response_tlv, class->version, linkConfiguration->securityPolicy);
+    thread_discovery_ccm_info_write(&discover_response_tlv, class->version, linkConfiguration->securityPolicy);
 
     ptr = thread_meshcop_tlv_data_write_uint16(ptr, MESHCOP_TLV_DISCOVERY_RESPONSE, discover_response_tlv);
     ptr = thread_meshcop_tlv_data_write(ptr, MESHCOP_TLV_XPANID, 8, linkConfiguration->extented_pan_id);
-    ptr = thread_meshcop_tlv_data_write(ptr, MESHCOP_TLV_NETWORK_NAME, stringlen((char*)&linkConfiguration->name, 16), linkConfiguration->name);
+    ptr = thread_meshcop_tlv_data_write(ptr, MESHCOP_TLV_NETWORK_NAME, stringlen((char *)&linkConfiguration->name, 16), linkConfiguration->name);
     //Optional Part
 
     if (linkConfiguration->securityPolicy & SECURITY_POLICY_NATIVE_COMMISSIONING_ALLOWED) {
@@ -577,9 +677,9 @@ static int thread_discovery_response_send(thread_discovery_class_t *class, threa
         }
     }
 
-    ptr =  thread_extension_discover_response_write(cur, ptr);
+    ptr =  thread_discovery_ccm_response_write(cur, ptr);
 
-    if (mle_service_update_length_by_ptr(buf_id,ptr)!= 0) {
+    if (mle_service_update_length_by_ptr(buf_id, ptr) != 0) {
         tr_debug("Buffer overflow at message write");
     }
 
@@ -629,7 +729,7 @@ static bool thread_announce_discovery_request_timer_update(thread_discovery_clas
         return true;
     }
 
-    if (thread_announce_discovery_process_ready(class->thread_announce_request) ) {
+    if (thread_announce_discovery_process_ready(class->thread_announce_request)) {
         thread_discovery_process_end(class->interface);
         announce_discovery_response_t *result = class->thread_announce_request->network;
         thread_announce_scan_ready_cb *response_cb = class->thread_announce_request->response_cb;
@@ -788,7 +888,7 @@ static bool thread_discovery_request_filter_validate(link_configuration_s *linkC
 
     common_write_16_bit(linkConfiguration->panId, compare_tlv.data);
 
-    if (thread_discovery_tlv_spesific_data_discover(data_ptr, length, &compare_tlv) ) {
+    if (thread_discovery_tlv_spesific_data_discover(data_ptr, length, &compare_tlv)) {
         return false;
     }
 
@@ -796,7 +896,7 @@ static bool thread_discovery_request_filter_validate(link_configuration_s *linkC
     compare_tlv.length = 8;
     compare_tlv.type = MESHCOP_TLV_XPANID;
 
-    if (thread_discovery_tlv_spesific_data_discover(data_ptr, length, &compare_tlv) ) {
+    if (thread_discovery_tlv_spesific_data_discover(data_ptr, length, &compare_tlv)) {
         return false;
     }
 
@@ -804,10 +904,10 @@ static bool thread_discovery_request_filter_validate(link_configuration_s *linkC
 
 }
 
-static void thread_discovery_request_msg_handler(thread_discovery_class_t * discovery_class, mle_message_t *mle_msg)
+static void thread_discovery_request_msg_handler(thread_discovery_class_t *discovery_class, mle_message_t *mle_msg)
 {
     //Validate that server is enabled
-    if (!discovery_class->discovery_server_active ) {
+    if (!discovery_class->discovery_server_active) {
         return;
     }
 
@@ -849,9 +949,9 @@ static void thread_discovery_request_msg_handler(thread_discovery_class_t * disc
     if (joiner_flag) {
         //Can we respond
         thread_management_server_data_t joiner_router_info;
-        if (0 != thread_management_server_commisoner_data_get(discovery_class->interface_id , &joiner_router_info) ||
-                 !joiner_router_info.joiner_router_enabled) {
-            if (!thread_extension_joining_enabled(discovery_class->interface_id)) {
+        if (0 != thread_management_server_commisoner_data_get(discovery_class->interface_id, &joiner_router_info) ||
+                !joiner_router_info.joiner_router_enabled) {
+            if (!thread_discovery_ccm_joining_enabled(discovery_class->interface_id)) {
                 tr_debug("Drop by Joining disabled");
                 return;
             }
@@ -876,7 +976,8 @@ static bool thread_seering_data_accept_any(uint8_t length, uint8_t *data)
     return false;
 }
 
-static void thread_discovery_nwk_push_to_list_by_lqi(thread_nwk_discovery_response_list_t *result_list, discovery_response_list_t *nwk_info) {
+static void thread_discovery_nwk_push_to_list_by_lqi(thread_nwk_discovery_response_list_t *result_list, discovery_response_list_t *nwk_info)
+{
     if (ns_list_count(result_list)) {
         ns_list_foreach_safe(discovery_response_list_t, cur_entry, result_list) {
             if (nwk_info->dbm > cur_entry->dbm) {
@@ -891,7 +992,8 @@ static void thread_discovery_nwk_push_to_list_by_lqi(thread_nwk_discovery_respon
     }
 }
 
-static void thread_discovery_joiner_set(thread_nwk_discovery_response_list_t *result_list, discovery_response_list_t *nwk_info, bool new_accept_any) {
+static void thread_discovery_joiner_set(thread_nwk_discovery_response_list_t *result_list, discovery_response_list_t *nwk_info, bool new_accept_any)
+{
     if (ns_list_count(result_list)) {
 
         bool cur_acept_any;
@@ -923,7 +1025,7 @@ static void thread_discovery_joiner_set(thread_nwk_discovery_response_list_t *re
 
 
 
-static void thread_discovery_response_msg_handler(thread_discovery_class_t * discovery_class, mle_message_t *mle_msg)
+static void thread_discovery_response_msg_handler(thread_discovery_class_t *discovery_class, mle_message_t *mle_msg)
 {
     if (!discovery_class->discovery_request || !discovery_class->discovery_request->waiting_response) {
         return;
@@ -943,8 +1045,8 @@ static void thread_discovery_response_msg_handler(thread_discovery_class_t * dis
     nwk_name_length = thread_meshcop_tlv_find(discovery_tlv.dataPtr, discovery_tlv.tlvLen, MESHCOP_TLV_NETWORK_NAME, &nwk_name);
 
     if (thread_meshcop_tlv_data_get_uint16(discovery_tlv.dataPtr, discovery_tlv.tlvLen, MESHCOP_TLV_DISCOVERY_RESPONSE, &discover_response_tlv) < 2
-        || thread_meshcop_tlv_find(discovery_tlv.dataPtr, discovery_tlv.tlvLen, MESHCOP_TLV_XPANID, &extented_panid) < 8
-        || nwk_name_length > 16) {
+            || thread_meshcop_tlv_find(discovery_tlv.dataPtr, discovery_tlv.tlvLen, MESHCOP_TLV_XPANID, &extented_panid) < 8
+            || nwk_name_length > 16) {
 
         tr_debug("discover response not include all mandatory TLV's");
         return;
@@ -982,19 +1084,19 @@ static void thread_discovery_response_msg_handler(thread_discovery_class_t * dis
     }
 
     if (discovery_class->discovery_request->joiner_flag && (!joiner_port_valid || steerin_data_length == 0)) {
-        if (thread_extension_version_check(discovery_class->interface->thread_info->version)) {
-            if (!discovery_class->interface->thread_info->extension_credentials_ptr) {
+        if (discovery_class->interface->thread_info->version >= THREAD_VERSION_1_2) {
+            if (!discovery_class->interface->thread_info->ccm_credentials_ptr) {
                 tr_debug("Dropped, no joiner info");
             }
         } else {
-            tr_debug("Dropped by no valid joiner info %u %u",joiner_port_valid, steerin_data_length);
+            tr_debug("Dropped by no valid joiner info %u %u", joiner_port_valid, steerin_data_length);
             return;
         }
     }
 
     discovery_response_list_t *nwk_info = thread_discover_response_msg_get_discover_from_list(
-                    &discovery_class->discovered_network,
-                    discovery_class->discovery_request->active_channel, pan_id);
+                                              &discovery_class->discovered_network,
+                                              discovery_class->discovery_request->active_channel, pan_id);
     if (nwk_info) {
         if (nwk_info->dbm < mle_msg->dbm) {
             goto save_optional_data;
@@ -1019,7 +1121,7 @@ static void thread_discovery_response_msg_handler(thread_discovery_class_t * dis
 
     thread_meshcop_tlv_data_get_uint16(discovery_tlv.dataPtr, discovery_tlv.tlvLen, MESHCOP_TLV_COMMISSIONER_UDP_PORT, &nwk_info->commissioner_port);
 
-    thread_extension_discover_response_read(nwk_info, discover_response_tlv, discovery_tlv.dataPtr, discovery_tlv.tlvLen);
+    thread_discovery_ccm_response_read(nwk_info, discover_response_tlv, discovery_tlv.dataPtr, discovery_tlv.tlvLen);
 
     //Add to last
     if (discovery_class->discovery_request->native_commisioner_scan) {
@@ -1034,7 +1136,7 @@ save_optional_data:
     memcpy(nwk_info->extented_mac, mle_msg->packet_src_address + 8, 8);
     nwk_info->extented_mac[0] ^= 2;
     if (steerin_data_length) {
-        memcpy(nwk_info->steering_data,steering_data, steerin_data_length);
+        memcpy(nwk_info->steering_data, steering_data, steerin_data_length);
         nwk_info->steering_data_valid = steerin_data_length;
     }
 
@@ -1049,7 +1151,7 @@ static void thread_announce_discovery_message_receiver_cb(int8_t interface_id, m
     if (mle_msg->message_type != MLE_COMMAND_DATASET_ANNOUNCE) {
         return;
     }
-    thread_discovery_class_t * discovery_class = thread_discovery_class_get(interface_id);
+    thread_discovery_class_t *discovery_class = thread_discovery_class_get(interface_id);
     if (!discovery_class || !discovery_class->thread_announce_request) {
         return;
     }
@@ -1061,15 +1163,15 @@ static void thread_announce_discovery_message_receiver_cb(int8_t interface_id, m
     uint16_t channel;
 
     tr_debug("Host Recv Dataset Announce %s", trace_ipv6(mle_msg->packet_src_address));
-    if (8 > thread_tmfcop_tlv_data_get_uint64(mle_msg->data_ptr, mle_msg->data_length,MLE_TYPE_ACTIVE_TIMESTAMP,&timestamp)) {
+    if (8 > thread_tmfcop_tlv_data_get_uint64(mle_msg->data_ptr, mle_msg->data_length, MLE_TYPE_ACTIVE_TIMESTAMP, &timestamp)) {
         tr_error("Missing timestamp TLV");
         return;
     }
-    if (2 > thread_tmfcop_tlv_data_get_uint16(mle_msg->data_ptr, mle_msg->data_length,MLE_TYPE_PANID,&panid)) {
+    if (2 > thread_tmfcop_tlv_data_get_uint16(mle_msg->data_ptr, mle_msg->data_length, MLE_TYPE_PANID, &panid)) {
         tr_error("Missing Panid TLV");
         return;
     }
-    if (3 > thread_tmfcop_tlv_find(mle_msg->data_ptr, mle_msg->data_length,MLE_TYPE_CHANNEL,&ptr)) {
+    if (3 > thread_tmfcop_tlv_find(mle_msg->data_ptr, mle_msg->data_length, MLE_TYPE_CHANNEL, &ptr)) {
         tr_error("Missing Channel TLV");
         return;
     }
@@ -1084,7 +1186,7 @@ static void thread_announce_discovery_message_receiver_cb(int8_t interface_id, m
     announce_discovery_response_t *response = NULL;
     if (discovery_class->thread_announce_request->network) {
         response = discovery_class->thread_announce_request->network;
-        if (timestamp <= discovery_class->thread_announce_request->network->active_timestamp ) {
+        if (timestamp <= discovery_class->thread_announce_request->network->active_timestamp) {
             response = NULL;
         }
     } else {
@@ -1107,7 +1209,7 @@ static void thread_announce_discover_receive_cb(int8_t interface_id, mle_message
     (void)security_headers;
 
     /* Check that message is from link-local scope */
-    if(!addr_is_ipv6_link_local(mle_msg->packet_src_address)) {
+    if (!addr_is_ipv6_link_local(mle_msg->packet_src_address)) {
         return;
     }
 
@@ -1117,7 +1219,7 @@ static void thread_announce_discover_receive_cb(int8_t interface_id, mle_message
 static void thread_discovery_message_receiver_cb(int8_t interface_id, mle_message_t *mle_msg)
 {
     //Discovery interface get
-    thread_discovery_class_t * discovery_class = thread_discovery_class_get(interface_id);
+    thread_discovery_class_t *discovery_class = thread_discovery_class_get(interface_id);
     if (!discovery_class) {
         return;
     }
@@ -1174,7 +1276,7 @@ int thread_discovery_init(int8_t interface_id, struct protocol_interface_info_en
         return -2;
     }
 
-    thread_discovery_class_t * discovery_class = thread_discovery_class_get(interface_id);
+    thread_discovery_class_t *discovery_class = thread_discovery_class_get(interface_id);
     if (discovery_class) {
         //Verify reed boolean
 
@@ -1197,7 +1299,7 @@ int thread_discovery_init(int8_t interface_id, struct protocol_interface_info_en
 
     //Allocate new entry
     discovery_class = thread_discovery_class_allocate(reedDevice);
-    if (!discovery_class ) {
+    if (!discovery_class) {
         mle_service_interface_receiver_bypass_handler_update(interface_id,  NULL);
         return -1;
     }
@@ -1215,8 +1317,8 @@ return_ok:
  */
 int thread_discovery_reset(int8_t interface_id)
 {
-    thread_discovery_class_t * discovery_class = thread_discovery_class_get(interface_id);
-    if (!discovery_class ) {
+    thread_discovery_class_t *discovery_class = thread_discovery_class_get(interface_id);
+    if (!discovery_class) {
         return -1;
     }
     thread_discovery_request_free(discovery_class);
@@ -1237,11 +1339,11 @@ static bool thread_discovery_timer_update(void)
                 keep_timer_active = true;
             }
         } else if (cur_class->discovery_request) {
-            if (thread_discovery_request_timer_update(cur_class) ) {
+            if (thread_discovery_request_timer_update(cur_class)) {
                 keep_timer_active = true;
             }
-        } else if(cur_class->thread_announce_request) {
-            if ( thread_announce_discovery_request_timer_update(cur_class) ) {
+        } else if (cur_class->thread_announce_request) {
+            if (thread_announce_discovery_request_timer_update(cur_class)) {
                 keep_timer_active = true;
             }
         }
@@ -1254,7 +1356,7 @@ static bool thread_discovery_timer_update(void)
  */
 int thread_discovery_responser_enable(int8_t interface_id, bool enable_service)
 {
-    thread_discovery_class_t * discovery_class = thread_discovery_class_get(interface_id);
+    thread_discovery_class_t *discovery_class = thread_discovery_class_get(interface_id);
     if (!discovery_class || !discovery_class->msg_buffers) {
         return -1;
     }
@@ -1284,7 +1386,7 @@ static void thread_discovery_normal_receive_cb(int8_t interface_id, mle_message_
 int thread_discovery_network_scan(struct protocol_interface_info_entry *cur_interface, thread_discover_reques_t *scan_request, thread_discovery_ready_cb *ready_cb)
 {
 
-    thread_discovery_class_t * discovery_class = thread_discovery_class_get(cur_interface->id);
+    thread_discovery_class_t *discovery_class = thread_discovery_class_get(cur_interface->id);
     if (!discovery_class || !ready_cb || !scan_request) {
         return -1;
     }
@@ -1304,7 +1406,7 @@ int thread_discovery_network_scan(struct protocol_interface_info_entry *cur_inte
         return -3;
     }
 
-    if (mle_service_interface_register(cur_interface->id, cur_interface, thread_discovery_normal_receive_cb, discovery_class->discovery_request->temporary_mac64,8) != 0) {
+    if (mle_service_interface_register(cur_interface->id, cur_interface, thread_discovery_normal_receive_cb, discovery_class->discovery_request->temporary_mac64, 8) != 0) {
         thread_discovery_request_free(discovery_class);
         return -1;
     }
@@ -1323,46 +1425,46 @@ int thread_discovery_network_scan(struct protocol_interface_info_entry *cur_inte
 
 int thread_discovery_announce_network_scan(int8_t interface_id, thread_announce_discover_reques_t *scan_request, thread_announce_scan_ready_cb *ready_cb)
 {
-    thread_discovery_class_t * discovery_class = thread_discovery_class_get(interface_id);
+    thread_discovery_class_t *discovery_class = thread_discovery_class_get(interface_id);
     if (!discovery_class || !ready_cb || !scan_request) {
         return -1;
     }
 
-        //Check Is discovery started already
-        if (discovery_class->discovery_request || discovery_class->thread_announce_request) {
-            return -2;
-        }
+    //Check Is discovery started already
+    if (discovery_class->discovery_request || discovery_class->thread_announce_request) {
+        return -2;
+    }
 
-        if (!scan_request->channel_mask) {
-            return -1;
-        }
+    if (!scan_request->channel_mask) {
+        return -1;
+    }
 
-        discovery_class->thread_announce_request = thread_announce_discovery_request_allocate(scan_request, ready_cb);
+    discovery_class->thread_announce_request = thread_announce_discovery_request_allocate(scan_request, ready_cb);
 
-        if (!discovery_class->thread_announce_request) {
-            return -3;
-        }
+    if (!discovery_class->thread_announce_request) {
+        return -3;
+    }
 
-        //Update receiver callback
-        if (mle_service_interface_receiver_handler_update(interface_id, thread_announce_discover_receive_cb) != 0) {
-            thread_announce_discovery_request_free(discovery_class);
-            return -1;
-        }
+    //Update receiver callback
+    if (mle_service_interface_receiver_handler_update(interface_id, thread_announce_discover_receive_cb) != 0) {
+        thread_announce_discovery_request_free(discovery_class);
+        return -1;
+    }
 
-        if (mle_service_interface_receiver_bypass_handler_update(interface_id,  thread_announce_discovery_message_receiver_cb) != 0) {
-            thread_discovery_request_free(discovery_class);
-            return -1;
-        }
+    if (mle_service_interface_receiver_bypass_handler_update(interface_id,  thread_announce_discovery_message_receiver_cb) != 0) {
+        thread_discovery_request_free(discovery_class);
+        return -1;
+    }
 
-        //Set temporary mac and generate ll64
-        thread_announce_discovery_prepare(discovery_class->interface, discovery_class->thread_announce_request);
-        return 0;
+    //Set temporary mac and generate ll64
+    thread_announce_discovery_prepare(discovery_class->interface, discovery_class->thread_announce_request);
+    return 0;
 }
 
 discovery_response_list_t *thread_discovery_network_description_get(int8_t interface_id)
 {
-    thread_discovery_class_t * discovery_class = thread_discovery_class_get(interface_id);
-    if (!discovery_class ) {
+    thread_discovery_class_t *discovery_class = thread_discovery_class_get(interface_id);
+    if (!discovery_class) {
         return NULL;
     }
 
@@ -1382,8 +1484,8 @@ discovery_response_list_t *thread_discovery_network_description_get(int8_t inter
  */
 int thread_discovery_free(int8_t interface_id)
 {
-    thread_discovery_class_t * discovery_class = thread_discovery_class_get(interface_id);
-    if (!discovery_class ) {
+    thread_discovery_class_t *discovery_class = thread_discovery_class_get(interface_id);
+    if (!discovery_class) {
         return -1;
     }
 

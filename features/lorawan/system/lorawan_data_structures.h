@@ -44,9 +44,6 @@
 typedef uint32_t lorawan_time_t;
 #endif
 
-// Radio wake-up time from sleep - unit ms.
-#define RADIO_WAKEUP_TIME                           1
-
 /*!
  * Sets the length of the LoRaMAC footer field.
  * Mainly indicates the MIC field length.
@@ -70,14 +67,16 @@ typedef uint32_t lorawan_time_t;
  */
 #define LORAMAC_PHY_MAXPAYLOAD                      255
 
+#define LORAWAN_DEFAULT_QOS                         1
+
 /**
  *
  * Default user application maximum data size for transmission
  */
 // reject if user tries to set more than MTU
 #if MBED_CONF_LORA_TX_MAX_SIZE > 255
-    #warning "Cannot set TX Max size more than MTU=255"
-    #define MBED_CONF_LORA_TX_MAX_SIZE              255
+#warning "Cannot set TX Max size more than MTU=255"
+#define MBED_CONF_LORA_TX_MAX_SIZE              255
 #endif
 
 /*!
@@ -187,9 +186,10 @@ typedef struct {
      */
     uint32_t join_accept_delay2;
     /*!
-     * The number of uplink messages repetitions (confirmed messages only).
+     * The number of uplink messages repetitions for QOS set by network server
+     * in LinkADRReq mac command (unconfirmed messages only).
      */
-    uint8_t retry_num;
+    uint8_t nb_trans;
     /*!
      * The datarate offset between uplink and downlink on first window.
      */
@@ -666,7 +666,7 @@ typedef struct {
     /*!
      * The SNR of the received packet.
      */
-    uint8_t snr;
+    int8_t snr;
     /*!
      * The receive window.
      *
@@ -681,6 +681,14 @@ typedef struct {
      * The downlink counter value for the received frame.
      */
     uint32_t dl_frame_counter;
+    /*!
+     * The downlink channel
+     */
+    uint32_t channel;
+    /*!
+     * The time on air of the received frame.
+     */
+    lorawan_time_t rx_toa;
 } loramac_mcps_indication_t;
 
 /*!
@@ -838,9 +846,6 @@ typedef enum device_states {
     DEVICE_STATE_SENDING,
     DEVICE_STATE_AWAITING_ACK,
     DEVICE_STATE_STATUS_CHECK,
-#if defined(LORAWAN_COMPLIANCE_TEST)
-    DEVICE_STATE_COMPLIANCE_TEST,
-#endif
     DEVICE_STATE_SHUTDOWN
 } device_states_t;
 
@@ -877,6 +882,9 @@ typedef struct {
      */
     int8_t data_rate;
     /*!
+     *
+     * For CONFIRMED Messages:
+     *
      * The number of trials to transmit the frame, if the LoRaMAC layer did not
      * receive an acknowledgment. The MAC performs a datarate adaptation
      * according to the LoRaWAN Specification V1.0.2, chapter 18.4, as in
@@ -895,6 +903,13 @@ typedef struct {
      *
      * Note that if nb_trials is set to 1 or 2, the MAC will not decrease
      * the datarate, if the LoRaMAC layer did not receive an acknowledgment.
+     *
+     * For UNCONFIRMED Messages:
+     *
+     * Provides a certain QOS level set by network server in LinkADRReq MAC
+     * command. The device will transmit the given UNCONFIRMED message nb_trials
+     * time with same frame counter until a downlink is received. Standard defined
+     * range is 1:15. Data rates will NOT be adapted according to chapter 18.4.
      */
     uint8_t nb_trials;
 
@@ -980,6 +995,10 @@ typedef struct lorawan_session {
  */
 typedef struct {
     /*!
+     * Type of modulation used (LoRa or FSK)
+     */
+    uint8_t modem_type;
+    /*!
      * The RX channel.
      */
     uint8_t channel;
@@ -1000,9 +1019,13 @@ typedef struct {
      */
     uint32_t frequency;
     /*!
-     * The RX window timeout
+     * The RX window timeout - Symbols
      */
     uint32_t window_timeout;
+    /*!
+     * The RX window timeout - Milliseconds
+     */
+    uint32_t window_timeout_ms;
     /*!
      * The RX window offset
      */
@@ -1033,6 +1056,9 @@ typedef struct {
     int timer_id;
 } timer_event_t;
 
+/*!
+ * A composite structure containing device identifiers and security keys
+ */
 typedef struct {
     /*!
      * Device IEEE EUI
@@ -1063,6 +1089,9 @@ typedef struct {
 
 } loramac_keys;
 
+/*!
+ * A composite structure containing all the timers used in the LoRaWAN operation
+ */
 typedef struct {
     /*!
      * Aggregated duty cycle management
@@ -1100,6 +1129,9 @@ typedef struct {
 
 } lorawan_timers;
 
+/*!
+ * Global MAC layer configuration parameters
+ */
 typedef struct {
 
     /*!
@@ -1116,12 +1148,6 @@ typedef struct {
      * Indicates if the node supports repeaters
      */
     bool is_repeater_supported;
-
-    /*!
-     * IsPacketCounterFixed enables the MIC field tests by fixing the
-     * ul_frame_counter value
-     */
-    bool is_ul_frame_counter_fixed;
 
     /*!
      * Used for test purposes. Disables the opening of the reception windows.
@@ -1255,8 +1281,8 @@ typedef struct {
 
     /*!
      * LoRaMac reception windows delay
-     * \remark normal frame: RxWindowXDelay = ReceiveDelayX - RADIO_WAKEUP_TIME
-     *         join frame  : RxWindowXDelay = JoinAcceptDelayX - RADIO_WAKEUP_TIME
+     * \remark normal frame: RxWindowXDelay = ReceiveDelayX - Offset
+     *         join frame  : RxWindowXDelay = JoinAcceptDelayX - Offset
      */
     uint32_t rx_window1_delay;
     uint32_t rx_window2_delay;
@@ -1283,118 +1309,5 @@ typedef struct {
     multicast_params_t *multicast_channels;
 
 } loramac_protocol_params;
-
-
-#if defined(LORAWAN_COMPLIANCE_TEST)
-
-typedef struct {
-    /*!
-     * MLME-Request type.
-     */
-    mlme_type_t type;
-
-    mlme_cw_tx_mode_t cw_tx_mode;
-} loramac_mlme_req_t;
-
-typedef struct {
-    /*!
-     * Compliance test request
-     */
-    mcps_type_t type;
-
-    /*!
-     * Frame port field. Must be set if the payload is not empty. Use the
-     * application-specific frame port values: [1...223].
-     *
-     * LoRaWAN Specification V1.0.2, chapter 4.3.2.
-     */
-    uint8_t fport;
-
-    /*!
-     * Uplink datarate, if ADR is off.
-     */
-    int8_t data_rate;
-    /*!
-     * The number of trials to transmit the frame, if the LoRaMAC layer did not
-     * receive an acknowledgment. The MAC performs a datarate adaptation
-     * according to the LoRaWAN Specification V1.0.2, chapter 18.4, as in
-     * the following table:
-     *
-     * Transmission nb | Data Rate
-     * ----------------|-----------
-     * 1 (first)       | DR
-     * 2               | DR
-     * 3               | max(DR-1,0)
-     * 4               | max(DR-1,0)
-     * 5               | max(DR-2,0)
-     * 6               | max(DR-2,0)
-     * 7               | max(DR-3,0)
-     * 8               | max(DR-3,0)
-     *
-     * Note that if nb_trials is set to 1 or 2, the MAC will not decrease
-     * the datarate, if the LoRaMAC layer did not receive an acknowledgment.
-     */
-    uint8_t nb_trials;
-
-    /** Payload data
-      *
-      * A pointer to the buffer of the frame payload.
-      */
-    uint8_t f_buffer[LORAMAC_PHY_MAXPAYLOAD];
-
-    /** Payload size
-     *
-     * The size of the frame payload.
-     */
-    uint16_t f_buffer_size;
-
-} loramac_compliance_test_req_t;
-
-/**  LoRaWAN compliance tests support data
- *
- */
-typedef struct compliance_test {
-    /** Is test running
-     *
-     */
-    bool running;
-    /** State of test
-     *
-     */
-    uint8_t state;
-    /** Is TX confirmed
-     *
-     */
-    bool is_tx_confirmed;
-    /** Port used by the application
-     *
-     */
-    uint8_t app_port;
-    /** Maximum size of data used by application
-     *
-     */
-    uint8_t app_data_size;
-    /** Data provided by application
-     *
-     */
-    uint8_t app_data_buffer[MBED_CONF_LORA_TX_MAX_SIZE];
-    /** Downlink counter
-     *
-     */
-    uint16_t downlink_counter;
-    /** Is link check required
-     *
-     */
-    bool link_check;
-    /** Demodulation margin
-     *
-     */
-    uint8_t demod_margin;
-    /** Number of gateways
-     *
-     */
-    uint8_t nb_gateways;
-} compliance_test_t;
-#endif
 
 #endif /* LORAWAN_SYSTEM_LORAWAN_DATA_STRUCTURES_H_ */

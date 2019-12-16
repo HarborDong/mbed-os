@@ -29,7 +29,7 @@ class RtcResetTest(BaseHostTest):
     """
 
     """Start of the RTC"""
-    START_TIME = 50000
+    START_TIME = 1537789823 # GMT: Monday, 24 September 2018 11:50:23
     START_TIME_TOLERANCE = 10
     """Time to delay after sending reset"""
     DELAY_TIME = 5.0
@@ -40,7 +40,7 @@ class RtcResetTest(BaseHostTest):
         """Register callbacks required for the test"""
         self._error = False
         generator = self.rtc_reset_test()
-        generator.next()
+        next(generator)
 
         def run_gen(key, value, time):
             """Run the generator, and fail testing if the iterator stops"""

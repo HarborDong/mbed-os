@@ -18,6 +18,8 @@
 #include "utest/utest.h"
 #include "BlockDevice.h"
 #include "FileSystem.h"
+
+#include <stdlib.h>
 #if COMPONENT_SPIF
 #include "SPIFBlockDevice.h"
 #include "LittleFileSystem.h"
@@ -28,7 +30,9 @@
 #error [NOT_SUPPORTED] storage test not supported on this platform
 #endif
 
+#if COMPONENT_SPIF || COMPONENT_SD
 using namespace utest::v1;
+using namespace mbed;
 
 static const size_t small_buf_size = 10;
 static const size_t medium_buf_size = 250;
@@ -39,6 +43,7 @@ FILE *fd[test_files];
 
 BlockDevice *bd = BlockDevice::get_default_instance();
 FileSystem  *fs = FileSystem::get_default_instance();
+const char *bd_type;
 
 /*----------------help functions------------------*/
 
@@ -68,6 +73,7 @@ static void deinit()
 //init the blockdevice and reformat the filesystem
 static void bd_init_fs_reformat()
 {
+    bd_type = bd->get_type();
     init();
 }
 
@@ -1953,7 +1959,7 @@ static void FS_fill_data_and_seek()
 
     for (i = 1; i <= 255; i++) {
 
-        res = fseek(fd[0], (long)-i, SEEK_END);
+        res = fseek(fd[0], (long) - i, SEEK_END);
         TEST_ASSERT_EQUAL(0, res);
 
         j = getc(fd[0]);
@@ -2090,7 +2096,7 @@ Case cases[] = {
 
 utest::v1::status_t greentea_test_setup(const size_t number_of_cases)
 {
-    GREENTEA_SETUP(3000, "default_auto");
+    GREENTEA_SETUP(300, "default_auto");
     return greentea_test_setup_handler(number_of_cases);
 }
 
@@ -2100,3 +2106,5 @@ int main()
 {
     return !Harness::run(specification);
 }
+
+#endif // COMPONENT_SPIF || COMPONENT_SD

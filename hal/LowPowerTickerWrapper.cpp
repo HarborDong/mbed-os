@@ -1,5 +1,6 @@
 /* mbed Microcontroller Library
  * Copyright (c) 2018 ARM Limited
+ * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,15 +33,12 @@ void LowPowerTickerWrapper::irq_handler(ticker_irq_handler_type handler)
 {
     core_util_critical_section_enter();
 
-    if (_suspended) {
-        if (handler) {
-            handler(&data);
-        }
-        core_util_critical_section_exit();
-        return;
-    }
-
-    if (_pending_fire_now || _match_check(_intf->read())) {
+    // This code no longer filters out early interrupts. Instead it
+    // passes them through to the next layer and ignores further interrupts
+    // until the next call to set_interrrupt or fire_interrupt (when not suspended).
+    // This is to ensure that the device doesn't get stuck in sleep due to an
+    // early low power ticker interrupt that was ignored.
+    if (_pending_fire_now || _pending_match || _suspended) {
         _timeout.detach();
         _pending_timeout = false;
         _pending_match = false;
@@ -77,6 +75,14 @@ void LowPowerTickerWrapper::suspend()
 void LowPowerTickerWrapper::resume()
 {
     core_util_critical_section_enter();
+
+    // Wait until rescheduling is allowed
+    while (!_set_interrupt_allowed) {
+        timestamp_t current = _intf->read();
+        if (((current - _last_actual_set_interrupt) & _mask) >= _min_count_between_writes) {
+            _set_interrupt_allowed  = true;
+        }
+    }
 
     _suspended = false;
 
@@ -118,7 +124,7 @@ uint32_t LowPowerTickerWrapper::read()
     core_util_critical_section_enter();
 
     timestamp_t current = _intf->read();
-    if (_match_check(current)) {
+    if (!_suspended && _match_check(current)) {
         _intf->fire_interrupt();
     }
 
@@ -133,7 +139,13 @@ void LowPowerTickerWrapper::set_interrupt(timestamp_t timestamp)
     _last_set_interrupt = _intf->read();
     _cur_match_time = timestamp;
     _pending_match = true;
-    _schedule_match(_last_set_interrupt);
+    if (!_suspended) {
+        _schedule_match(_last_set_interrupt);
+    } else {
+        _intf->set_interrupt(timestamp);
+        _last_actual_set_interrupt = _last_set_interrupt;
+        _set_interrupt_allowed = false;
+    }
 
     core_util_critical_section_exit();
 }
@@ -207,7 +219,14 @@ void LowPowerTickerWrapper::_timeout_handler()
     _pending_timeout = false;
 
     timestamp_t current = _intf->read();
-    if (_ticker_match_interval_passed(_last_set_interrupt, current, _cur_match_time)) {
+    /* Add extra check for '_last_set_interrupt == _cur_match_time'
+     *
+     * When '_last_set_interrupt == _cur_match_time', _ticker_match_interval_passed sees it as
+     * one-round interval rather than just-pass, so add extra check for it. In rare cases, we
+     * may trap in _timeout_handler/_schedule_match loop. This check can break it.
+     */
+    if ((_last_set_interrupt == _cur_match_time) ||
+            _ticker_match_interval_passed(_last_set_interrupt, current, _cur_match_time)) {
         _intf->fire_interrupt();
     } else {
         _schedule_match(current);
@@ -223,7 +242,9 @@ bool LowPowerTickerWrapper::_match_check(timestamp_t current)
     if (!_pending_match) {
         return false;
     }
-    return _ticker_match_interval_passed(_last_set_interrupt, current, _cur_match_time);
+    /* Add extra check for '_last_set_interrupt == _cur_match_time' as above */
+    return (_last_set_interrupt == _cur_match_time) ||
+           _ticker_match_interval_passed(_last_set_interrupt, current, _cur_match_time);
 }
 
 uint32_t LowPowerTickerWrapper::_lp_ticks_to_us(uint32_t ticks)
@@ -245,7 +266,7 @@ void LowPowerTickerWrapper::_schedule_match(timestamp_t current)
         }
     }
 
-    uint32_t cycles_until_match = (_cur_match_time - _last_set_interrupt) & _mask;
+    uint32_t cycles_until_match = (_cur_match_time - current) & _mask;
     bool too_close = cycles_until_match < _min_count_until_match;
 
     if (!_set_interrupt_allowed) {
@@ -268,7 +289,7 @@ void LowPowerTickerWrapper::_schedule_match(timestamp_t current)
         _intf->set_interrupt(_cur_match_time);
         current = _intf->read();
         _last_actual_set_interrupt = current;
-        _set_interrupt_allowed  = false;
+        _set_interrupt_allowed = false;
 
         // Check for overflow
         uint32_t new_cycles_until_match = (_cur_match_time - current) & _mask;

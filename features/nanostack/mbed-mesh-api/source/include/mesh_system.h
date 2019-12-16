@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015 ARM Limited. All rights reserved.
+ * Copyright (c) 2015-2019 ARM Limited. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  * Licensed under the Apache License, Version 2.0 (the License); you may
  * not use this file except in compliance with the License.
@@ -25,13 +25,20 @@ extern "C" {
 /*
  * Event type for connecting
  */
-#define APPL_EVENT_CONNECT 0x01
+enum {
+    APPL_EVENT_CONNECT = 0x01,
+    APPL_BACKHAUL_INTERFACE_PHY_DOWN,
+    APPL_BACKHAUL_LINK_DOWN,
+    APPL_BACKHAUL_LINK_UP
+};
 
 /*
  * \brief Send application connect event to receiver tasklet to
  * ensure that connection is made in right tasklet.
  */
 void mesh_system_send_connect_event(uint8_t receiver);
+
+int mesh_system_set_file_system_root_path(const char *root_path);
 
 /*
  * \brief Initialize mesh system.

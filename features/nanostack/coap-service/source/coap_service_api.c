@@ -36,7 +36,7 @@
 #include "coap_message_handler.h"
 #include "mbed-coap/sn_coap_protocol.h"
 
-static int16_t coap_msg_process_callback(int8_t socket_id, sn_coap_hdr_s *coap_message, coap_transaction_t *transaction_ptr);
+static int16_t coap_msg_process_callback(int8_t socket_id, int8_t recv_if_id, sn_coap_hdr_s *coap_message, coap_transaction_t *transaction_ptr, const uint8_t *local_addr);
 
 typedef struct uri_registration {
     char *uri_ptr;
@@ -70,6 +70,13 @@ static uint32_t coap_ticks = 1;
 
 #define COAP_TICK_TIMER 0xf1
 
+//#define TRACE_DEEP
+#ifdef TRACE_DEEP
+#define tr_deep   tr_debug
+#else
+#define tr_deep(...)
+#endif
+
 static uri_registration_t *uri_registration_find(coap_service_t *this, const void *uri_ptr, uint16_t uri_len)
 {
     ns_list_foreach(uri_registration_t, cur_ptr, &this->uri_list) {
@@ -95,7 +102,7 @@ static coap_service_t *service_find_by_socket(int8_t socket_id)
 {
     coap_service_t *this = NULL;
     ns_list_foreach(coap_service_t, cur_ptr, &instance_list) {
-        if( coap_connection_handler_socket_belongs_to(cur_ptr->conn_handler, socket_id) ){
+        if (coap_connection_handler_socket_belongs_to(cur_ptr->conn_handler, socket_id)) {
             this = cur_ptr;
             break;
         }
@@ -165,7 +172,7 @@ static uint8_t coap_tx_function(uint8_t *data_ptr, uint16_t data_len, sn_nsdl_ad
         return 0;
     }
 
-    tr_debug("Service %d, CoAP TX Function - mid: %d", transaction_ptr->service_id, common_read_16_bit(data_ptr + 2));
+    tr_debug("Service %d, CoAP TX - mid: %d", transaction_ptr->service_id, common_read_16_bit(data_ptr + 2));
 
     this = service_find(transaction_ptr->service_id);
     if (!this) {
@@ -177,7 +184,7 @@ static uint8_t coap_tx_function(uint8_t *data_ptr, uint16_t data_len, sn_nsdl_ad
     dest_addr.type = ADDRESS_IPV6;
 
     ret_val = coap_connection_handler_send_data(this->conn_handler, &dest_addr, transaction_ptr->local_address,
-            data_ptr, data_len, (this->service_options & COAP_SERVICE_OPTIONS_SECURE_BYPASS) == COAP_SERVICE_OPTIONS_SECURE_BYPASS);
+                                                data_ptr, data_len, (this->service_options & COAP_SERVICE_OPTIONS_SECURE_BYPASS) == COAP_SERVICE_OPTIONS_SECURE_BYPASS);
     if (ret_val == 0) {
         if (!transaction_ptr->data_ptr) {
             transaction_ptr->data_ptr = ns_dyn_mem_alloc(data_len);
@@ -201,50 +208,78 @@ static void service_event_handler(arm_event_s *event)
         tr_debug("service tasklet initialised");
         /*initialize coap service and listen socket*/
     }
+
     if (event->event_type == ARM_LIB_SYSTEM_TIMER_EVENT && event->event_id == COAP_TICK_TIMER) {
         coap_message_handler_exec(coap_service_handle, coap_ticks++);
-        if(coap_ticks && !coap_ticks % SECURE_SESSION_CLEAN_INTERVAL){
+        if (coap_ticks && !(coap_ticks % SECURE_SESSION_CLEAN_INTERVAL)) {
             coap_connection_handler_exec(coap_ticks);
         }
     }
     eventOS_event_timer_request((uint8_t)COAP_TICK_TIMER, ARM_LIB_SYSTEM_TIMER_EVENT, tasklet_id, 1000);
 }
 
-static int16_t coap_msg_process_callback(int8_t socket_id, sn_coap_hdr_s *coap_message, coap_transaction_t *transaction_ptr)
+static int16_t coap_msg_process_callback(int8_t socket_id, int8_t recv_if_id, sn_coap_hdr_s *coap_message, coap_transaction_t *transaction_ptr, const uint8_t *local_addr)
 {
     coap_service_t *this;
+    coap_service_msg_prevalidate_cb *msg_prevalidate_callback;
+    uint16_t listen_socket_port;
+
     if (!coap_message || !transaction_ptr) {
         return -1;
     }
 
-    // Message is request, find correct handle
+    // Message is request, find correct handle based on URI
     this = service_find_by_uri(socket_id, coap_message->uri_path_ptr, coap_message->uri_path_len);
     if (!this) {
-        tr_debug("not registered uri %.*s", coap_message->uri_path_len, coap_message->uri_path_ptr);
+        tr_deep("URI %.*s not registered", coap_message->uri_path_len, coap_message->uri_path_ptr);
+        // URI is not available, find any service that holds the same shared socket so that we can get msg_prevalidate_callback to validate addresses
+        this = service_find_by_socket(socket_id);
+        if (!this) {
+            return -1;
+        }
+    }
+
+    msg_prevalidate_callback = (coap_service_msg_prevalidate_cb *)coap_connection_handler_msg_prevalidate_callback_get(this->conn_handler, &listen_socket_port);
+    if (msg_prevalidate_callback) {
+        // message prevalidation activated for the port
+        char request_uri[coap_message->uri_path_len + 1];
+        memcpy(request_uri, coap_message->uri_path_ptr, coap_message->uri_path_len);
+        request_uri[coap_message->uri_path_len] = 0;
+
+        int msg_prevalidate_status = msg_prevalidate_callback(this->interface_id, (uint8_t *)local_addr, listen_socket_port, recv_if_id, transaction_ptr->remote_address, transaction_ptr->remote_port, request_uri);
+        if (msg_prevalidate_status >= 1) {
+            tr_deep("Drop CoAP msg %s from %s to %s", request_uri, trace_ipv6(transaction_ptr->remote_address), trace_ipv6(local_addr));
+            return -1;
+        }
+    }
+
+    uri_registration_t *uri_reg_ptr = uri_registration_find(this, coap_message->uri_path_ptr, coap_message->uri_path_len);
+    if (!uri_reg_ptr) {
+        /* URI is not available, stop further processing */
         if (coap_message->msg_type == COAP_MSG_TYPE_CONFIRMABLE) {
             coap_message_handler_response_send(coap_service_handle, transaction_ptr->service_id, COAP_SERVICE_OPTIONS_NONE, coap_message,
-                COAP_MSG_CODE_RESPONSE_NOT_FOUND, COAP_CT_NONE, NULL, 0);
+                                               COAP_MSG_CODE_RESPONSE_NOT_FOUND, COAP_CT_NONE, NULL, 0);
             return 0;
         }
         return -1;
     }
 
-    uri_registration_t *uri_reg_ptr = uri_registration_find(this, coap_message->uri_path_ptr, coap_message->uri_path_len);
-    if (uri_reg_ptr && uri_reg_ptr->request_recv_cb) {
-        tr_debug("Service %d, call request recv cb uri %.*s", this->service_id, coap_message->uri_path_len, coap_message->uri_path_ptr);
-
-        if ((this->service_options & COAP_SERVICE_OPTIONS_SECURE_BYPASS) == COAP_SERVICE_OPTIONS_SECURE_BYPASS ) {//TODO Add secure bypass option
+    if (uri_reg_ptr->request_recv_cb) {
+        if ((this->service_options & COAP_SERVICE_OPTIONS_SECURE_BYPASS) == COAP_SERVICE_OPTIONS_SECURE_BYPASS) { //TODO Add secure bypass option
             // Service has secure bypass active TODO this is not defined in interface
             // this check can be removed I think
             transaction_ptr->options = COAP_REQUEST_OPTIONS_SECURE_BYPASS;
         }
+
         transaction_ptr->service_id = this->service_id;
+        tr_debug("Service %d, recv msg: %.*s", this->service_id, coap_message->uri_path_len, coap_message->uri_path_ptr);
         return uri_reg_ptr->request_recv_cb(this->service_id, transaction_ptr->remote_address, transaction_ptr->remote_port, coap_message);
     }
+
     return -1;
 }
 
-static int recv_cb(int8_t socket_id, uint8_t src_address[static 16], uint16_t port, const uint8_t dst_address[static 16], unsigned char *data, int len)
+static int recv_cb(int8_t socket_id, int8_t recv_if_id, uint8_t src_address[static 16], uint16_t port, const uint8_t dst_address[static 16], unsigned char *data, int len)
 {
     uint8_t *data_ptr = NULL;
     uint16_t data_len = 0;
@@ -260,10 +295,9 @@ static int recv_cb(int8_t socket_id, uint8_t src_address[static 16], uint16_t po
     }
     memcpy(data_ptr, data, len);
     data_len = len;
-    tr_debug("service recv socket data len %d ", data_len);
 
     //parse coap message what CoAP to use
-    int ret = coap_message_handler_coap_msg_process(coap_service_handle, socket_id, src_address, port, dst_address, data_ptr, data_len, &coap_msg_process_callback);
+    int ret = coap_message_handler_coap_msg_process(coap_service_handle, socket_id, recv_if_id, src_address, port, dst_address, data_ptr, data_len, &coap_msg_process_callback);
     own_free(data_ptr);
     return ret;
 }
@@ -273,7 +307,7 @@ static int virtual_send_cb(int8_t socket_id, const uint8_t address[static 16], u
     coap_service_t *this = service_find_by_socket(socket_id);
     if (this && this->virtual_socket_send_cb) {
         tr_debug("send to virtual socket, service: %d", this->service_id);
-        return this->virtual_socket_send_cb(this->service_id, (uint8_t*)address, port, data_ptr, data_len);
+        return this->virtual_socket_send_cb(this->service_id, (uint8_t *)address, port, data_ptr, data_len);
     }
     return -1;
 }
@@ -296,7 +330,7 @@ static void sec_done_cb(int8_t socket_id, uint8_t address[static 16], uint16_t p
         dest_addr.type = ADDRESS_IPV6;
 
         coap_connection_handler_send_data(this->conn_handler, &dest_addr, transaction_ptr->local_address,
-                transaction_ptr->data_ptr, transaction_ptr->data_len, (this->service_options & COAP_SERVICE_OPTIONS_SECURE_BYPASS) == COAP_SERVICE_OPTIONS_SECURE_BYPASS);
+                                          transaction_ptr->data_ptr, transaction_ptr->data_len, (this->service_options & COAP_SERVICE_OPTIONS_SECURE_BYPASS) == COAP_SERVICE_OPTIONS_SECURE_BYPASS);
         ns_dyn_mem_free(transaction_ptr->data_ptr);
         transaction_ptr->data_ptr = NULL;
         transaction_ptr->data_len = 0;
@@ -338,7 +372,7 @@ static int get_passwd_cb(int8_t socket_id, uint8_t address[static 16], uint16_t 
 }
 
 int8_t coap_service_initialize(int8_t interface_id, uint16_t listen_port, uint8_t service_options,
-                                 coap_service_security_start_cb *start_ptr, coap_service_security_done_cb *coap_security_done_cb)
+                               coap_service_security_start_cb *start_ptr, coap_service_security_done_cb *coap_security_done_cb)
 {
     coap_service_t *this = ns_dyn_mem_alloc(sizeof(coap_service_t));
 
@@ -365,7 +399,7 @@ int8_t coap_service_initialize(int8_t interface_id, uint16_t listen_port, uint8_
     }
 
     this->conn_handler = connection_handler_create(recv_cb, virtual_send_cb, get_passwd_cb, sec_done_cb);
-    if(!this->conn_handler){
+    if (!this->conn_handler) {
         ns_dyn_mem_free(this);
         return -1;
     }
@@ -378,10 +412,10 @@ int8_t coap_service_initialize(int8_t interface_id, uint16_t listen_port, uint8_
     this->conn_handler->registered_to_multicast = this->service_options & COAP_SERVICE_OPTIONS_MULTICAST_JOIN;
 
     if (0 > coap_connection_handler_open_connection(this->conn_handler, listen_port,
-            (this->service_options & COAP_SERVICE_OPTIONS_EPHEMERAL_PORT),
-            (this->service_options & COAP_SERVICE_OPTIONS_SECURE),
-            !(this->service_options & COAP_SERVICE_OPTIONS_VIRTUAL_SOCKET),
-            (this->service_options & COAP_SERVICE_OPTIONS_SECURE_BYPASS))) {
+                                                    (this->service_options & COAP_SERVICE_OPTIONS_EPHEMERAL_PORT),
+                                                    (this->service_options & COAP_SERVICE_OPTIONS_SECURE),
+                                                    !(this->service_options & COAP_SERVICE_OPTIONS_VIRTUAL_SOCKET),
+                                                    (this->service_options & COAP_SERVICE_OPTIONS_SECURE_BYPASS))) {
         ns_dyn_mem_free(this->conn_handler);
         ns_dyn_mem_free(this);
         return -1;
@@ -407,7 +441,7 @@ void coap_service_delete(int8_t service_id)
         return;
     }
 
-    if (this->conn_handler){
+    if (this->conn_handler) {
         bool leave_multicast_group = false;
         if (coap_service_can_leave_multicast_group(this->conn_handler)) {
             // This is the last handler joined to multicast group
@@ -434,7 +468,7 @@ extern void coap_service_close_secure_connection(int8_t service_id, uint8_t dest
     if (!this || !destination_addr_ptr) {
         return;
     }
-    if (this->conn_handler){
+    if (this->conn_handler) {
         connection_handler_close_secure_connection(this->conn_handler, destination_addr_ptr, port);
     }
 }
@@ -475,7 +509,7 @@ int8_t coap_service_register_uri(int8_t service_id, const char *uri, uint8_t all
     uri_reg_ptr = uri_registration_find(this, uri, uri_len);
     if (!uri_reg_ptr) {
         uri_reg_ptr = ns_dyn_mem_alloc(sizeof(uri_registration_t));
-        if( !uri_reg_ptr ){
+        if (!uri_reg_ptr) {
             tr_error("Uri registration failed, OOM");
             return -2;
         }
@@ -522,17 +556,20 @@ int8_t coap_service_unregister_uri(int8_t service_id, const char *uri)
 }
 
 uint16_t coap_service_request_send(int8_t service_id, uint8_t options, const uint8_t destination_addr[static 16], uint16_t destination_port, sn_coap_msg_type_e msg_type, sn_coap_msg_code_e msg_code, const char *uri,
-        sn_coap_content_format_e cont_type, const uint8_t *payload_ptr, uint16_t payload_len, coap_service_response_recv *request_response_cb){
+                                   sn_coap_content_format_e cont_type, const uint8_t *payload_ptr, uint16_t payload_len, coap_service_response_recv *request_response_cb)
+{
     //TODO: coap_service_response_recv is an ugly cast, this should be refactored away + sn_coap_hdr_s MUST NOT be exposed to users of coap-service!
     //Callback would be still needed, but where to store callback?
     return coap_message_handler_request_send(coap_service_handle, service_id, options, destination_addr, destination_port, msg_type, msg_code, uri, cont_type, payload_ptr, payload_len, request_response_cb);
 }
 
-int8_t coap_service_response_send(int8_t service_id, uint8_t options, sn_coap_hdr_s *request_ptr, sn_coap_msg_code_e message_code, sn_coap_content_format_e content_type, const uint8_t *payload_ptr,uint16_t payload_len){
+int8_t coap_service_response_send(int8_t service_id, uint8_t options, sn_coap_hdr_s *request_ptr, sn_coap_msg_code_e message_code, sn_coap_content_format_e content_type, const uint8_t *payload_ptr, uint16_t payload_len)
+{
     return coap_message_handler_response_send(coap_service_handle, service_id, options, request_ptr, message_code, content_type, payload_ptr, payload_len);
 }
 
-int8_t coap_service_response_send_by_msg_id(int8_t service_id, uint8_t options, uint16_t msg_id, sn_coap_msg_code_e message_code, sn_coap_content_format_e content_type, const uint8_t *payload_ptr,uint16_t payload_len) {
+int8_t coap_service_response_send_by_msg_id(int8_t service_id, uint8_t options, uint16_t msg_id, sn_coap_msg_code_e message_code, sn_coap_content_format_e content_type, const uint8_t *payload_ptr, uint16_t payload_len)
+{
     return coap_message_handler_response_send_by_msg_id(coap_service_handle, service_id, options, msg_id, message_code, content_type, payload_ptr, payload_len);
 }
 
@@ -541,10 +578,15 @@ int8_t coap_service_request_delete(int8_t service_id, uint16_t msg_id)
     return coap_message_handler_request_delete(coap_service_handle, service_id, msg_id);
 }
 
+void coap_service_request_delete_by_service_id(int8_t service_id)
+{
+    coap_message_handler_request_delete_by_service_id(coap_service_handle, service_id);
+}
+
 int8_t coap_service_set_handshake_timeout(int8_t service_id, uint32_t min, uint32_t max)
 {
     coap_service_t *this = service_find(service_id);
-    if(!this){
+    if (!this) {
         return -1;
     }
 
@@ -576,7 +618,7 @@ uint16_t coap_service_id_find_by_socket(int8_t socket_id)
 {
     coap_service_t *this = service_find_by_socket(socket_id);
 
-    return this ? this->service_id:0;
+    return this ? this->service_id : 0;
 }
 
 int8_t coap_service_certificate_set(int8_t service_id, const unsigned char *cert, uint16_t cert_len, const unsigned char *priv_key, uint8_t priv_key_len)
@@ -616,4 +658,13 @@ int8_t coap_service_blockwise_size_set(int8_t service_id, uint16_t size)
     }
 
     return sn_coap_protocol_set_block_size(coap_service_handle->coap, size);
+}
+
+int8_t coap_service_msg_prevalidate_callback_set(uint16_t listen_socket, coap_service_msg_prevalidate_cb *msg_prevalidate_cb)
+{
+    coap_conn_handler_t *conn_handler = coap_connection_handler_find_by_socket_port(listen_socket);
+    if (conn_handler) {
+        return (int8_t)coap_connection_handler_msg_prevalidate_callback_set(conn_handler, (cch_func_cb *)msg_prevalidate_cb);
+    }
+    return -1;
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2018, Arm Limited and affiliates.
+ * Copyright (c) 2016-2019, Arm Limited and affiliates.
  * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,7 +19,7 @@
 #define MAC_HELPER_H
 
 #include "mlme.h"
-#include "Core/include/address.h"
+#include "Core/include/ns_address_internal.h"
 
 struct channel_list_s;
 struct nwk_scan_params;
@@ -39,7 +39,7 @@ void mac_helper_drop_selected_from_the_scanresult(struct nwk_scan_params *scanPa
 
 void mac_helper_free_scan_confirm(struct nwk_scan_params *params);
 
-struct nwk_pan_descriptor_t * mac_helper_free_pan_descriptions(struct nwk_pan_descriptor_t *nwk_cur_active);
+struct nwk_pan_descriptor_t *mac_helper_free_pan_descriptions(struct nwk_pan_descriptor_t *nwk_cur_active);
 
 int8_t mac_helper_nwk_id_filter_set(const uint8_t *nw_id, struct nwk_filter_params *filter);
 
@@ -67,9 +67,17 @@ uint8_t mac_helper_default_key_index_get(struct protocol_interface_info_entry *i
 
 int8_t mac_helper_security_default_key_set(struct protocol_interface_info_entry *interface, const uint8_t *key, uint8_t id, uint8_t keyid_mode);
 
+int8_t mac_helper_security_default_recv_key_set(struct protocol_interface_info_entry *interface, const uint8_t *key, uint8_t id, uint8_t keyid_mode);
+
+int8_t mac_helper_security_auto_request_key_index_set(struct protocol_interface_info_entry *interface, uint8_t key_attibute_index, uint8_t id);
+
 int8_t mac_helper_security_next_key_set(struct protocol_interface_info_entry *interface, uint8_t *key, uint8_t id, uint8_t keyid_mode);
 
 int8_t mac_helper_security_prev_key_set(struct protocol_interface_info_entry *interface, uint8_t *key, uint8_t id, uint8_t keyid_mode);
+
+int8_t mac_helper_security_key_to_descriptor_set(struct protocol_interface_info_entry *interface, const uint8_t *key, uint8_t id, uint8_t descriptor);
+
+int8_t mac_helper_security_key_descriptor_clear(struct protocol_interface_info_entry *interface, uint8_t descriptor);
 
 void mac_helper_security_key_swap_next_to_default(struct protocol_interface_info_entry *interface);
 
@@ -107,11 +115,17 @@ int8_t mac_helper_link_frame_counter_read(int8_t interface_id, uint32_t *seq_ptr
 
 int8_t mac_helper_link_frame_counter_set(int8_t interface_id, uint32_t seq_ptr);
 
-void mac_helper_devicetable_remove(struct mac_api_s *mac_api, uint8_t attribute_index);
+int8_t mac_helper_key_link_frame_counter_read(int8_t interface_id, uint32_t *seq_ptr, uint8_t descriptor);
+
+int8_t mac_helper_key_link_frame_counter_set(int8_t interface_id, uint32_t seq_ptr, uint8_t descriptor);
+
+void mac_helper_devicetable_remove(struct mac_api_s *mac_api, uint8_t attribute_index, uint8_t *mac64);
 
 void mac_helper_device_description_write(struct protocol_interface_info_entry *cur, mlme_device_descriptor_t *device_desc, uint8_t *mac64, uint16_t mac16, uint32_t frame_counter, bool exempt);
 
 void mac_helper_devicetable_set(const mlme_device_descriptor_t *device_dec, struct protocol_interface_info_entry *cur, uint8_t attribute_index, uint8_t keyID, bool force_set);
 int8_t mac_helper_mac_mlme_max_retry_set(int8_t interface_id, uint8_t mac_retry_set);
+
+int8_t mac_helper_mac_device_description_pan_id_update(int8_t interface_id, uint16_t pan_id);
 
 #endif // MAC_HELPER_H

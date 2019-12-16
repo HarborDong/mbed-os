@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2018, Arm Limited and affiliates.
+ * Copyright (c) 2014-2019, Arm Limited and affiliates.
  * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -33,7 +33,7 @@
 #include "NWK_INTERFACE/Include/protocol_abstract.h"
 
 // Users of protocol.h can assume it includes these headers
-#include "Core/include/address.h"
+#include "Core/include/ns_address_internal.h"
 #include "Core/include/ns_buffer.h"
 
 // Headers below this are implementation details - users of protocol.h shouldn't rely on them
@@ -114,13 +114,14 @@ typedef enum icmp_state {
     ER_DHCP_ROUTER_ID_REQ = 23,
     ER_DHCP_ROUTER_ID_RELEASE = 24,
     ER_CHILD_ID_REQ,
-    ER_BOOTSRAP_DONE ,
+    ER_BOOTSRAP_DONE,
     ER_BOOTSTRAP_CONNECTION_DOWN,
     ER_BOOTSTRAP_IP_ADDRESS_ALLOC_FAIL,
     ER_BOOTSTRAP_DAD_FAIL,
     ER_BOOTSTRAP_SCAN_FAIL,
     ER_BOOTSTRAP_LEADER_UP,
     ER_BOOTSTRAP_NEW_FRAGMENT_START,
+    ER_WAIT_RESTART,
     ER_RPL_LOCAL_REPAIR,
 } icmp_state_t;
 
@@ -202,15 +203,15 @@ typedef struct nwk_filter_params {
 } nwk_filter_params_s;
 
 typedef struct mac_cordinator {
-    unsigned cord_adr_mode:2;
+    unsigned cord_adr_mode: 2;
     uint8_t mac_mlme_coord_address[8];
 } mac_cordinator_s;
 
 typedef struct arm_15_4_mac_parameters_t {
     /* Security API USE */
-    unsigned mac_configured_sec_level:3;
-    unsigned mac_security_level:3;
-    unsigned mac_key_id_mode:2;
+    unsigned mac_configured_sec_level: 3;
+    unsigned mac_security_level: 3;
+    unsigned mac_key_id_mode: 2;
     uint8_t mac_prev_key_index;
     uint8_t mac_next_key_index;
     uint8_t mac_default_key_index;
@@ -219,18 +220,18 @@ typedef struct arm_15_4_mac_parameters_t {
     uint8_t mac_default_key_attribute_id;
     uint8_t mac_next_key_attribute_id;
     uint32_t security_frame_counter;
-    bool shortAdressValid:1;
+    bool shortAdressValid: 1;
     /* MAC PIB boolean */
-    bool SecurityEnabled:1;
-    bool RxOnWhenIdle:1;
-    bool PromiscuousMode:1;
-    bool GTSPermit:1;
-    bool AssociationPermit:1;
-    bool AssociatedPANCoord:1;
-    bool TimestampSupported:1;
-    bool BattLifeExt:1;
-    bool AutoRequest:1;
-    bool MacUnsusecured_2003_cab:1;
+    bool SecurityEnabled: 1;
+    bool RxOnWhenIdle: 1;
+    bool PromiscuousMode: 1;
+    bool GTSPermit: 1;
+    bool AssociationPermit: 1;
+    bool AssociatedPANCoord: 1;
+    bool TimestampSupported: 1;
+    bool BattLifeExt: 1;
+    bool AutoRequest: 1;
+    bool MacUnsusecured_2003_cab: 1;
     /* MAC PIB boolean */
     channel_list_s mac_channel_list;
     uint8_t mac_channel;
@@ -248,7 +249,7 @@ typedef struct arm_15_4_mac_parameters_t {
     beacon_join_priority_tx_cb *beacon_join_priority_tx_cb_ptr;
     uint8_t (*beacon_ind)(uint8_t *ptr, uint8_t len, protocol_interface_info_entry_t *cur);
     mac_neighbor_table_t *mac_neighbor_table;
-}arm_15_4_mac_parameters_t;
+} arm_15_4_mac_parameters_t;
 
 typedef void mac_poll_fail_cb(int8_t nwk_interface_id);
 
@@ -260,12 +261,12 @@ typedef struct nwk_rfd_poll_setups {
     uint8_t nwk_parent_poll_fail;
     uint8_t protocol_poll;
     mlme_poll_t poll_req;
-    bool pollActive:1;
-    bool macDeepSleepEnabled:1;
+    bool pollActive: 1;
+    bool macDeepSleepEnabled: 1;
     mac_poll_fail_cb *pollFailCb;
 } nwk_rfd_poll_setups_s;
 
-typedef struct nwk_pana_params{
+typedef struct nwk_pana_params {
     net_tls_cipher_e nwk_chipher_mode;
     net_pana_session_mode_e client_session_mode;
     uint32_t psk_key_id;
@@ -337,9 +338,9 @@ typedef struct ipv6_ra_timing {
  * @param if_id Protocol interface id
  * @param conf MLME-SCAN confirm object (ownership not passed)
  */
-typedef void scan_confirm_cb(int8_t if_id, const mlme_scan_conf_t* conf);
-typedef void beacon_indication_cb(int8_t if_id, const mlme_beacon_ind_t* conf);
-typedef void comm_status_indication_cb(int8_t if_id, const mlme_comm_status_t* status);
+typedef void scan_confirm_cb(int8_t if_id, const mlme_scan_conf_t *conf);
+typedef void beacon_indication_cb(int8_t if_id, const mlme_beacon_ind_t *conf);
+typedef void comm_status_indication_cb(int8_t if_id, const mlme_comm_status_t *status);
 
 
 struct protocol_interface_info_entry {
@@ -409,6 +410,7 @@ struct protocol_interface_info_entry {
     bool mpl_treat_realm_domains_as_one: 1;
     bool mpl_auto_domain_on_group_join: 1;
 #endif
+    bool send_na : 1;
     /* RFC 4861 Router Variables */
     bool ip_forwarding : 1;
     bool ip_multicast_forwarding : 1;
@@ -455,7 +457,7 @@ struct protocol_interface_info_entry {
     if_6lowpan_security_info_t *if_lowpan_security_params; //Security Parameters
 
     struct mac_api_s *mac_api;
-    arm_15_4_mac_parameters_t* mac_parameters;
+    arm_15_4_mac_parameters_t *mac_parameters;
 
     struct eth_mac_api_s *eth_mac_api;
 
@@ -498,6 +500,7 @@ extern uint8_t nwk_bootsrap_ready(protocol_interface_info_entry_t *cur);
 extern protocol_interface_info_entry_t *protocol_stack_interface_info_get(nwk_interface_id nwk_id);
 extern bool nwk_interface_compare_mac_address(protocol_interface_info_entry_t *cur, uint_fast8_t addrlen, const uint8_t addr[/*addrlen*/]);
 extern protocol_interface_info_entry_t *protocol_stack_interface_generate_ethernet(struct eth_mac_api_s *api);
+extern protocol_interface_info_entry_t *protocol_stack_interface_generate_ppp(struct eth_mac_api_s *api);
 extern protocol_interface_info_entry_t *protocol_stack_interface_generate_lowpan(struct mac_api_s *api);
 extern uint32_t protocol_stack_interface_set_reachable_time(protocol_interface_info_entry_t *cur, uint32_t base_reachable_time);
 extern void net_bootsrap_cb_run(uint8_t event);
@@ -514,4 +517,6 @@ extern void protocol_core_dhcpv6_allocated_address_remove(protocol_interface_inf
 extern void nwk_bootsrap_state_update(arm_nwk_interface_status_type_e posted_event, protocol_interface_info_entry_t *cur);
 void bootsrap_next_state_kick(icmp_state_t new_state, protocol_interface_info_entry_t *cur);
 int8_t protocol_interface_address_compare(const uint8_t *addr);
+bool protocol_address_prefix_cmp(protocol_interface_info_entry_t *cur, const uint8_t *prefix, uint8_t prefix_len);
+bool protocol_interface_any_address_match(const uint8_t *prefix, uint8_t prefix_len);
 #endif /* _NS_PROTOCOL_H */

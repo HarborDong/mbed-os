@@ -36,8 +36,8 @@
 #include "mbed_critical.h"
 
 #if DEVICE_LPTICKER && !MBED_CONF_TARGET_LPTICKER_LPTIM
-volatile uint32_t LP_continuous_time = 0;
-volatile uint32_t LP_last_RTC_time = 0;
+volatile uint32_t LPTICKER_counter = 0;
+volatile uint32_t LPTICKER_RTC_time = 0;
 #endif
 
 static int RTC_inited = 0;
@@ -58,16 +58,19 @@ void rtc_init(void)
     __HAL_RCC_PWR_CLK_ENABLE();
     HAL_PWR_EnableBkUpAccess();
 
+#if defined(DUAL_CORE)
+    while (LL_HSEM_1StepLock(HSEM, CFG_HW_RCC_SEMID)) {
+    }
+#endif /* DUAL_CORE */
 #if MBED_CONF_TARGET_LSE_AVAILABLE
     RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_LSE;
-    RCC_OscInitStruct.PLL.PLLState   = RCC_PLL_NONE; // Mandatory, otherwise the PLL is reconfigured!
+    RCC_OscInitStruct.PLL.PLLState   = RCC_PLL_NONE;
     RCC_OscInitStruct.LSEState       = RCC_LSE_ON;
 
     if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK) {
         error("Cannot initialize RTC with LSE\n");
     }
 
-    __HAL_RCC_RTC_CLKPRESCALER(RCC_RTCCLKSOURCE_LSE);
     __HAL_RCC_RTC_CONFIG(RCC_RTCCLKSOURCE_LSE);
 
     PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_RTC;
@@ -76,19 +79,17 @@ void rtc_init(void)
         error("PeriphClkInitStruct RTC failed with LSE\n");
     }
 #else /*  MBED_CONF_TARGET_LSE_AVAILABLE */
-    // Reset Backup domain
-    __HAL_RCC_BACKUPRESET_FORCE();
-    __HAL_RCC_BACKUPRESET_RELEASE();
-
-    // Enable LSI clock
+#if TARGET_STM32WB
+    RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_LSI1;
+#else
     RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_LSI;
-    RCC_OscInitStruct.PLL.PLLState   = RCC_PLL_NONE; // Mandatory, otherwise the PLL is reconfigured!
+#endif
+    RCC_OscInitStruct.PLL.PLLState   = RCC_PLL_NONE;
     RCC_OscInitStruct.LSIState       = RCC_LSI_ON;
     if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK) {
         error("Cannot initialize RTC with LSI\n");
     }
 
-    __HAL_RCC_RTC_CLKPRESCALER(RCC_RTCCLKSOURCE_LSI);
     __HAL_RCC_RTC_CONFIG(RCC_RTCCLKSOURCE_LSI);
 
     PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_RTC;
@@ -97,9 +98,16 @@ void rtc_init(void)
         error("PeriphClkInitStruct RTC failed with LSI\n");
     }
 #endif /* MBED_CONF_TARGET_LSE_AVAILABLE */
+#if defined(DUAL_CORE)
+    LL_HSEM_ReleaseLock(HSEM, CFG_HW_RCC_SEMID, HSEM_CR_COREID_CURRENT);
+#endif /* DUAL_CORE */
 
     // Enable RTC
     __HAL_RCC_RTC_ENABLE();
+
+#if defined __HAL_RCC_RTCAPB_CLK_ENABLE /* part of STM32L4 */
+    __HAL_RCC_RTCAPB_CLK_ENABLE();
+#endif /* __HAL_RCC_RTCAPB_CLK_ENABLE */
 
     RtcHandle.Instance = RTC;
     RtcHandle.State = HAL_RTC_STATE_RESET;
@@ -113,17 +121,23 @@ void rtc_init(void)
     RtcHandle.Init.OutPut         = RTC_OUTPUT_DISABLE;
     RtcHandle.Init.OutPutPolarity = RTC_OUTPUT_POLARITY_HIGH;
     RtcHandle.Init.OutPutType     = RTC_OUTPUT_TYPE_OPENDRAIN;
+#if defined (RTC_OUTPUT_REMAP_NONE)
+    RtcHandle.Init.OutPutRemap    = RTC_OUTPUT_REMAP_NONE;
+#endif /* defined (RTC_OUTPUT_REMAP_NONE) */
+#if defined (RTC_OUTPUT_PULLUP_NONE)
+    RtcHandle.Init.OutPutPullUp   = RTC_OUTPUT_PULLUP_NONE;
+#endif /* defined (RTC_OUTPUT_PULLUP_NONE) */
 #endif /* TARGET_STM32F1 */
 
     if (HAL_RTC_Init(&RtcHandle) != HAL_OK) {
-        error("RTC initialization failed");
+        error("RTC initialization failed\n");
     }
 
 #if !(TARGET_STM32F1) && !(TARGET_STM32F2)
     /* STM32F1 : there are no shadow registers */
     /* STM32F2 : shadow registers can not be bypassed */
     if (HAL_RTCEx_EnableBypassShadow(&RtcHandle) != HAL_OK) {
-        error("EnableBypassShadow error");
+        error("EnableBypassShadow error\n");
     }
 #endif /* TARGET_STM32F1 || TARGET_STM32F2 */
 }
@@ -149,51 +163,15 @@ Information about STM32F1:
 For date, there is no specific register, only a software structure.
 It is then not a problem to not use shifts.
 */
-#if TARGET_STM32F1
 time_t rtc_read(void)
 {
-    RTC_DateTypeDef dateStruct = {0};
-    RTC_TimeTypeDef timeStruct = {0};
-    struct tm timeinfo;
+#if TARGET_STM32F1
 
     RtcHandle.Instance = RTC;
-
-    // Read actual date and time
-    // Warning: the time must be read first!
-    HAL_RTC_GetTime(&RtcHandle, &timeStruct, RTC_FORMAT_BIN);
-    HAL_RTC_GetDate(&RtcHandle, &dateStruct, RTC_FORMAT_BIN);
-
-    /* date information is null before first write procedure */
-    /* set 01/01/1970 as default values */
-    if (dateStruct.Year == 0) {
-        dateStruct.Year = 2 ;
-        dateStruct.Month = 1 ;
-        dateStruct.Date = 1 ;
-    }
-
-    // Setup a tm structure based on the RTC
-    /* tm_wday information is ignored by _rtc_maketime */
-    /* tm_isdst information is ignored by _rtc_maketime */
-    timeinfo.tm_mon  = dateStruct.Month - 1;
-    timeinfo.tm_mday = dateStruct.Date;
-    timeinfo.tm_year = dateStruct.Year + 68;
-    timeinfo.tm_hour = timeStruct.Hours;
-    timeinfo.tm_min  = timeStruct.Minutes;
-    timeinfo.tm_sec  = timeStruct.Seconds;
-
-    // Convert to timestamp
-    time_t t;
-    if (_rtc_maketime(&timeinfo, &t, RTC_4_YEAR_LEAP_YEAR_SUPPORT) == false) {
-        return 0;
-    }
-
-    return t;
-}
+    return RTC_ReadTimeCounter(&RtcHandle);
 
 #else /* TARGET_STM32F1 */
 
-time_t rtc_read(void)
-{
     struct tm timeinfo;
 
     /* Since the shadow registers are bypassed we have to read the time twice and compare them until both times are the same */
@@ -231,12 +209,23 @@ time_t rtc_read(void)
     }
 
     return t;
-}
 
 #endif /* TARGET_STM32F1 */
+}
+
+
 
 void rtc_write(time_t t)
 {
+#if TARGET_STM32F1
+
+    RtcHandle.Instance = RTC;
+    if (RTC_WriteTimeCounter(&RtcHandle, t) != HAL_OK) {
+        error("RTC_WriteTimeCounter error\n");
+    }
+
+#else /* TARGET_STM32F1 */
+
     RTC_DateTypeDef dateStruct = {0};
     RTC_TimeTypeDef timeStruct = {0};
 
@@ -261,22 +250,19 @@ void rtc_write(time_t t)
     timeStruct.Hours          = timeinfo.tm_hour;
     timeStruct.Minutes        = timeinfo.tm_min;
     timeStruct.Seconds        = timeinfo.tm_sec;
-
-#if !(TARGET_STM32F1)
     timeStruct.TimeFormat     = RTC_HOURFORMAT_24;
     timeStruct.DayLightSaving = RTC_DAYLIGHTSAVING_NONE;
     timeStruct.StoreOperation = RTC_STOREOPERATION_RESET;
-#endif /* TARGET_STM32F1 */
 
 #if DEVICE_LPTICKER && !MBED_CONF_TARGET_LPTICKER_LPTIM
-    /* Need to update LP_continuous_time value before new RTC time */
+    /* Before setting the new time, we need to update the LPTICKER_counter value */
+    /* rtc_read_lp function is then called */
     rtc_read_lp();
 
-    /* LP_last_RTC_time value is updated with the new RTC time */
-    LP_last_RTC_time = timeStruct.Seconds + timeStruct.Minutes * 60 + timeStruct.Hours * 60 * 60;
-
-    /* Save current SSR */
-    uint32_t Read_SubSeconds = (uint32_t)(RTC->SSR);
+    /* In rtc_read_lp, LPTICKER_RTC_time value has been updated with the current time */
+    /* We need now to overwrite the value with the new RTC time */
+    /* Note that when a new RTC time is set by HW, the RTC SubSeconds counter is reset to PREDIV_S_VALUE */
+    LPTICKER_RTC_time = (timeStruct.Seconds + timeStruct.Minutes * 60 + timeStruct.Hours * 60 * 60) * PREDIV_S_VALUE;
 #endif /* DEVICE_LPTICKER && !MBED_CONF_TARGET_LPTICKER_LPTIM */
 
     // Change the RTC current date/time
@@ -287,21 +273,17 @@ void rtc_write(time_t t)
         error("HAL_RTC_SetTime error\n");
     }
 
-#if DEVICE_LPTICKER && !MBED_CONF_TARGET_LPTICKER_LPTIM
-    while (Read_SubSeconds != (RTC->SSR)) {
-    }
-#endif /* DEVICE_LPTICKER && !MBED_CONF_TARGET_LPTICKER_LPTIM */
-
     core_util_critical_section_exit();
+#endif /* TARGET_STM32F1 */
 }
 
 int rtc_isenabled(void)
 {
-#if !(TARGET_STM32F1)
-    return ((RTC->ISR & RTC_ISR_INITS) ==  RTC_ISR_INITS);
-#else /* TARGET_STM32F1 */
+#if defined (RTC_FLAG_INITS) /* all STM32 except STM32F1 */
+    return LL_RTC_IsActiveFlag_INITS(RTC);
+#else /* RTC_FLAG_INITS */ /* TARGET_STM32F1 */
     return ((RTC->CRL & RTC_CRL_RSF) ==  RTC_CRL_RSF);
-#endif /* TARGET_STM32F1 */
+#endif /* RTC_FLAG_INITS */
 }
 
 
@@ -336,16 +318,25 @@ static void RTC_IRQHandler(void)
         }
     }
 
+#ifdef __HAL_RTC_WAKEUPTIMER_EXTI_CLEAR_FLAG
     __HAL_RTC_WAKEUPTIMER_EXTI_CLEAR_FLAG();
+#endif
 }
 
 uint32_t rtc_read_lp(void)
 {
+    /* RTC_time_tick is the addition of the RTC time register (in second) and the RTC sub-second register
+    *  This time value is breaking each 24h (= 86400s = 0x15180)
+    *  In order to get a U32 continuous time information, we use an internal counter : LPTICKER_counter
+    *  This counter is the addition of each spent time since last function call
+    *  Current RTC time is saved into LPTICKER_RTC_time
+    *  NB: rtc_read_lp() output is not the time in us, but the LPTICKER_counter (frequency LSE/4 = 8kHz => 122us)
+    */
+    core_util_critical_section_enter();
     struct tm timeinfo;
 
     /* Since the shadow registers are bypassed we have to read the time twice and compare them until both times are the same */
     /* We don't have to read date as we bypass shadow registers */
-    uint32_t Read_SecondFraction = (uint32_t)(RTC->PRER & RTC_PRER_PREDIV_S);
     uint32_t Read_time = (uint32_t)(RTC->TR & RTC_TR_RESERVED_MASK);
     uint32_t Read_SubSeconds = (uint32_t)(RTC->SSR);
 
@@ -358,44 +349,83 @@ uint32_t rtc_read_lp(void)
     timeinfo.tm_min  = RTC_Bcd2ToByte((uint8_t)((Read_time & (RTC_TR_MNT | RTC_TR_MNU)) >> 8));
     timeinfo.tm_sec  = RTC_Bcd2ToByte((uint8_t)((Read_time & (RTC_TR_ST  | RTC_TR_SU))  >> 0));
 
-    uint32_t RTC_time_s = timeinfo.tm_sec + timeinfo.tm_min * 60 + timeinfo.tm_hour * 60 * 60; // Max 0x0001-517F => * 8191 + 8191 = 0x2A2E-AE80
+    uint32_t RTC_time_tick = (timeinfo.tm_sec + timeinfo.tm_min * 60 + timeinfo.tm_hour * 60 * 60) * PREDIV_S_VALUE + PREDIV_S_VALUE - Read_SubSeconds; // Max 0x0001-517F * 8191 + 8191 = 0x2A2E-AE80
 
-    if (LP_last_RTC_time <= RTC_time_s) {
-        LP_continuous_time += (RTC_time_s - LP_last_RTC_time);
+    if (LPTICKER_RTC_time <= RTC_time_tick) {
+        LPTICKER_counter += (RTC_time_tick - LPTICKER_RTC_time);
     } else {
-        /* Add 24h */
-        LP_continuous_time += (24 * 60 * 60 + RTC_time_s - LP_last_RTC_time);
+        /* When RTC time is 0h00.01 and was 11H59.59, difference is "current time + 24h - previous time" */
+        LPTICKER_counter += (RTC_time_tick + 24 * 60 * 60 * PREDIV_S_VALUE - LPTICKER_RTC_time);
     }
-    LP_last_RTC_time = RTC_time_s;
+    LPTICKER_RTC_time = RTC_time_tick;
 
-    return LP_continuous_time * PREDIV_S_VALUE + Read_SecondFraction - Read_SubSeconds;
+    core_util_critical_section_exit();
+    return LPTICKER_counter;
 }
 
 void rtc_set_wake_up_timer(timestamp_t timestamp)
 {
+    /* RTC periodic auto wake up timer is used
+    *  This WakeUpTimer is loaded to an init value => WakeUpCounter
+    *  then timer starts counting down (even in low-power modes)
+    *  When it reaches 0, the WUTF flag is set in the RTC_ISR register
+    */
     uint32_t WakeUpCounter;
-    uint32_t current_lp_time;
+    uint32_t WakeUpClock = RTC_WAKEUPCLOCK_RTCCLK_DIV4;
 
-    current_lp_time = rtc_read_lp();
+    core_util_critical_section_enter();
 
+    /* MBED API gives the timestamp value to set
+    *  WakeUpCounter is then the delta between timestamp and the current tick (LPTICKER_counter)
+    *  If the current tick preceeds timestamp value, max U32 is added
+    */
+    uint32_t current_lp_time = rtc_read_lp();
     if (timestamp < current_lp_time) {
         WakeUpCounter = 0xFFFFFFFF - current_lp_time + timestamp;
     } else {
         WakeUpCounter = timestamp - current_lp_time;
     }
 
+    /* RTC WakeUpCounter is 16 bits
+    *  Corresponding time value depends on WakeUpClock
+    *  - RTC clock divided by 4  : max WakeUpCounter value is  8s (precision around 122 us)
+    *  - RTC clock divided by 8  : max WakeUpCounter value is 16s (precision around 244 us)
+    *  - RTC clock divided by 16 : max WakeUpCounter value is 32s (precision around 488 us)
+    *  - 1 Hz internal clock 16b : max WakeUpCounter value is 18h (precision 1 s)
+    *  - 1 Hz internal clock 17b : max WakeUpCounter value is 36h (precision 1 s)
+    */
     if (WakeUpCounter > 0xFFFF) {
-        WakeUpCounter = 0xFFFF;
+        WakeUpClock = RTC_WAKEUPCLOCK_RTCCLK_DIV8;
+        WakeUpCounter = WakeUpCounter / 2;
+
+        if (WakeUpCounter > 0xFFFF) {
+            WakeUpClock = RTC_WAKEUPCLOCK_RTCCLK_DIV16;
+            WakeUpCounter = WakeUpCounter / 2;
+
+            if (WakeUpCounter > 0xFFFF) {
+                /* Tick value needs to be translated in seconds : TICK * 16 (previous div16 value) / RTC clock (32768) */
+                WakeUpClock = RTC_WAKEUPCLOCK_CK_SPRE_16BITS;
+                WakeUpCounter = WakeUpCounter / 2048;
+
+                if (WakeUpCounter > 0xFFFF) {
+                    /* In this case 2^16 is added to the 16-bit counter value */
+                    WakeUpClock = RTC_WAKEUPCLOCK_CK_SPRE_17BITS;
+                    WakeUpCounter = WakeUpCounter - 0x10000;
+                }
+            }
+        }
     }
 
     RtcHandle.Instance = RTC;
-    if (HAL_RTCEx_SetWakeUpTimer_IT(&RtcHandle, WakeUpCounter, RTC_WAKEUPCLOCK_RTCCLK_DIV4) != HAL_OK) {
+    HAL_RTCEx_DeactivateWakeUpTimer(&RtcHandle);
+    if (HAL_RTCEx_SetWakeUpTimer_IT(&RtcHandle, WakeUpCounter, WakeUpClock) != HAL_OK) {
         error("rtc_set_wake_up_timer init error\n");
     }
 
     NVIC_SetVector(RTC_WKUP_IRQn, (uint32_t)RTC_IRQHandler);
     irq_handler = (void (*)(void))lp_ticker_irq_handler;
     NVIC_EnableIRQ(RTC_WKUP_IRQn);
+    core_util_critical_section_exit();
 }
 
 void rtc_fire_interrupt(void)
@@ -410,10 +440,7 @@ void rtc_fire_interrupt(void)
 void rtc_deactivate_wake_up_timer(void)
 {
     RtcHandle.Instance = RTC;
-    __HAL_RTC_WRITEPROTECTION_DISABLE(&RtcHandle);
-    __HAL_RTC_WAKEUPTIMER_DISABLE(&RtcHandle);
-    __HAL_RTC_WAKEUPTIMER_DISABLE_IT(&RtcHandle, RTC_IT_WUT);
-    __HAL_RTC_WRITEPROTECTION_ENABLE(&RtcHandle);
+    HAL_RTCEx_DeactivateWakeUpTimer(&RtcHandle);
     NVIC_DisableIRQ(RTC_WKUP_IRQn);
 }
 

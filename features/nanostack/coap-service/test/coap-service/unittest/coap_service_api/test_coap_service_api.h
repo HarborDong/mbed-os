@@ -39,6 +39,8 @@ bool test_coap_service_request_send();
 
 bool test_coap_service_request_delete();
 
+bool test_coap_service_request_delete_by_service_id();
+
 bool test_coap_service_response_send();
 
 bool test_coap_callbacks();
@@ -58,6 +60,8 @@ bool test_coap_service_get_internal_timer_ticks();
 bool test_coap_service_if_find_by_socket();
 
 bool test_coap_service_handshake_limit_set();
+
+bool test_coap_service_msg_prevalidate_cb_read_and_set();
 
 
 #ifdef __cplusplus

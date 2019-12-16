@@ -13,10 +13,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 #if !DEVICE_SLEEP
 #error [NOT_SUPPORTED] sleep not supported for this target
-#endif
+#else
 
 #include "mbed.h"
 
@@ -24,28 +23,14 @@
 #include "unity/unity.h"
 #include "greentea-client/test_env.h"
 #include "mbed_lp_ticker_wrapper.h"
+#include "hal/us_ticker_api.h"
 
+#include "sleep_test_utils.h"
 #include "sleep_api_tests.h"
 
-#define US_PER_S 1000000
-
-/* Flush serial buffer before deep sleep
- *
- * Since deepsleep() may shut down the UART peripheral, we wait for some time
- * to allow for hardware serial buffers to completely flush.
- *
- * Take NUMAKER_PFM_NUC472 as an example:
- * Its UART peripheral has 16-byte Tx FIFO. With baud rate set to 9600, flush
- * Tx FIFO would take: 16 * 8 * 1000 / 9600 = 13.3 (ms). So set wait time to
- * 20ms here for safe.
- *
- * This should be replaced with a better function that checks if the
- * hardware buffers are empty. However, such an API does not exist now,
- * so we'll use the busy_wait_ms() function for now.
- */
-#define SERIAL_FLUSH_TIME_MS    20
-
 using namespace utest::v1;
+
+static char info[512] = {0};
 
 /* The following ticker frequencies are possible:
  * high frequency ticker: 250 KHz (1 tick per 4 us) - 8 Mhz (1 tick per 1/8 us)
@@ -65,71 +50,6 @@ static const uint32_t sleep_mode_delta_us = (10 + 4 + 5);
  * delta = default 10 ms + worst ticker resolution + extra time for code execution */
 static const uint32_t deepsleep_mode_delta_us = (10000 + 125 + 5);
 
-unsigned int ticks_to_us(unsigned int ticks, unsigned int freq)
-{
-    return (unsigned int)((unsigned long long) ticks * US_PER_S / freq);
-}
-
-unsigned int us_to_ticks(unsigned int us, unsigned int freq)
-{
-    return (unsigned int)((unsigned long long) us * freq / US_PER_S);
-}
-
-unsigned int overflow_protect(unsigned int timestamp, unsigned int ticker_width)
-{
-    unsigned int counter_mask = ((1 << ticker_width) - 1);
-
-    return (timestamp & counter_mask);
-}
-
-bool compare_timestamps(unsigned int delta_ticks, unsigned int ticker_width, unsigned int expected, unsigned int actual)
-{
-    const unsigned int counter_mask = ((1 << ticker_width) - 1);
-
-    const unsigned int lower_bound = ((expected - delta_ticks) & counter_mask);
-    const unsigned int upper_bound = ((expected + delta_ticks) & counter_mask);
-
-    if (lower_bound < upper_bound) {
-        if (actual >= lower_bound && actual <= upper_bound) {
-            return true;
-        } else {
-            return false;
-        }
-    } else {
-        if ((actual >= lower_bound && actual <= counter_mask) || (actual >= 0 && actual <= upper_bound)) {
-            return true;
-        } else {
-            return false;
-        }
-    }
-}
-
-void busy_wait_ms(int ms)
-{
-    const ticker_info_t *info = us_ticker_get_info();
-    uint32_t mask = (1 << info->bits) - 1;
-    int delay = (int)((uint64_t)ms * info->frequency / 1000);
-
-    uint32_t prev = us_ticker_read();
-    while (delay > 0) {
-        uint32_t next = us_ticker_read();
-        delay -= (next - prev) & mask;
-        prev = next;
-    }
-}
-
-void us_ticker_isr(const ticker_data_t *const ticker_data)
-{
-    us_ticker_clear_interrupt();
-}
-
-#ifdef DEVICE_LPTICKER
-void lp_ticker_isr(const ticker_data_t *const ticker_data)
-{
-    lp_ticker_clear_interrupt();
-}
-#endif
-
 /* Test that wake-up time from sleep should be less than 10 us and
  * high frequency ticker interrupt can wake-up target from sleep. */
 void sleep_usticker_test()
@@ -140,6 +60,11 @@ void sleep_usticker_test()
 
     const ticker_irq_handler_type us_ticker_irq_handler_org = set_us_ticker_irq_handler(us_ticker_isr);
 
+    /* Give some time Green Tea to finish UART transmission before entering
+     * sleep mode.
+     */
+    busy_wait_ms(SERIAL_FLUSH_TIME_MS);
+
     /* Test only sleep functionality. */
     sleep_manager_lock_deep_sleep();
     TEST_ASSERT_FALSE_MESSAGE(sleep_manager_can_deep_sleep(), "deep sleep should be locked");
@@ -147,7 +72,8 @@ void sleep_usticker_test()
     /* Testing wake-up time 10 us. */
     for (timestamp_t i = 100; i < 1000; i += 100) {
         /* note: us_ticker_read() operates on ticks. */
-        const timestamp_t next_match_timestamp = overflow_protect(us_ticker_read() + us_to_ticks(i, ticker_freq),
+        const timestamp_t start_timestamp = us_ticker_read();
+        const timestamp_t next_match_timestamp = overflow_protect(start_timestamp + us_to_ticks(i, ticker_freq),
                                                                   ticker_width);
 
         us_ticker_set_interrupt(next_match_timestamp);
@@ -156,9 +82,11 @@ void sleep_usticker_test()
 
         const unsigned int wakeup_timestamp = us_ticker_read();
 
-        TEST_ASSERT(
-            compare_timestamps(us_to_ticks(sleep_mode_delta_us, ticker_freq), ticker_width, next_match_timestamp,
-                               wakeup_timestamp));
+        sprintf(info, "Delta ticks: %u, Ticker width: %u, Expected wake up tick: %d, Actual wake up tick: %d, delay ticks: %d, wake up after ticks: %d",
+                us_to_ticks(sleep_mode_delta_us, ticker_freq), ticker_width, next_match_timestamp, wakeup_timestamp, us_to_ticks(i, ticker_freq), wakeup_timestamp - start_timestamp);
+
+        TEST_ASSERT_MESSAGE(compare_timestamps(us_to_ticks(sleep_mode_delta_us, ticker_freq),
+                                               ticker_width, next_match_timestamp, wakeup_timestamp), info);
     }
 
     set_us_ticker_irq_handler(us_ticker_irq_handler_org);
@@ -167,7 +95,7 @@ void sleep_usticker_test()
     TEST_ASSERT_TRUE(sleep_manager_can_deep_sleep());
 }
 
-#ifdef DEVICE_LPTICKER
+#if DEVICE_LPTICKER
 
 /* Test that wake-up time from sleep should be less than 10 ms and
  * low power ticker interrupt can wake-up target from sleep. */
@@ -189,15 +117,39 @@ void deepsleep_lpticker_test()
     /* Testing wake-up time 10 ms. */
     for (timestamp_t i = 20000; i < 200000; i += 20000) {
         /* note: lp_ticker_read() operates on ticks. */
-        const timestamp_t next_match_timestamp = overflow_protect(lp_ticker_read() + us_to_ticks(i, ticker_freq), ticker_width);
+        const timestamp_t start_timestamp = lp_ticker_read();
+        const timestamp_t next_match_timestamp = overflow_protect(start_timestamp + us_to_ticks(i, ticker_freq), ticker_width);
 
         lp_ticker_set_interrupt(next_match_timestamp);
 
+        /* On some targets like STM family boards with LPTIM enabled there is a required delay (~100 us) before we are able to
+           reprogram LPTIM_COMPARE register back to back. This is handled by the low level lp ticker wrapper which uses LPTIM_CMPOK interrupt.
+           CMPOK fires when LPTIM_COMPARE register can be safely reprogrammed again. During this period deep-sleep is locked.
+           This means that on these platforms we have additional interrupt (CMPOK) fired always ~100 us after programming lp ticker.
+           Since this interrupt wakes-up the board from the sleep we need to go to sleep after CMPOK is handled. */
+        TEST_ASSERT_TRUE(sleep_manager_can_deep_sleep_test_check());
+
         sleep();
+
+        /* On some targets like STM family boards with LPTIM enabled an interrupt is triggered on counter rollover.
+           We need special handling for cases when next_match_timestamp < start_timestamp (interrupt is to be fired after rollover).
+           In such case after first wake-up we need to reset interrupt and go back to sleep waiting for the valid one.
+           NOTE: Above comment (CMPOK) applies also here.*/
+#if MBED_CONF_TARGET_LPTICKER_LPTIM
+        if ((next_match_timestamp < start_timestamp) && lp_ticker_read() < next_match_timestamp) {
+            lp_ticker_set_interrupt(next_match_timestamp);
+            wait_ns(200000);
+            sleep();
+        }
+#endif
 
         const timestamp_t wakeup_timestamp = lp_ticker_read();
 
-        TEST_ASSERT(compare_timestamps(us_to_ticks(deepsleep_mode_delta_us, ticker_freq), ticker_width, next_match_timestamp, wakeup_timestamp));
+        sprintf(info, "Delta ticks: %u, Ticker width: %u, Expected wake up tick: %d, Actual wake up tick: %d, delay ticks: %d, wake up after ticks: %d",
+                us_to_ticks(deepsleep_mode_delta_us, ticker_freq), ticker_width, next_match_timestamp, wakeup_timestamp, us_to_ticks(i, ticker_freq),  wakeup_timestamp - start_timestamp);
+
+        TEST_ASSERT_MESSAGE(compare_timestamps(us_to_ticks(deepsleep_mode_delta_us, ticker_freq), ticker_width,
+                                               next_match_timestamp, wakeup_timestamp), info);
     }
 
     set_lp_ticker_irq_handler(lp_ticker_irq_handler_org);
@@ -221,10 +173,13 @@ void deepsleep_high_speed_clocks_turned_off_test()
 
     TEST_ASSERT_TRUE_MESSAGE(sleep_manager_can_deep_sleep(), "deep sleep should not be locked");
 
-    const unsigned int us_ticks_before_sleep = us_ticker_read();
-
     const timestamp_t wakeup_time = lp_ticker_read() + us_to_ticks(20000, lp_ticker_freq);
     lp_ticker_set_interrupt(wakeup_time);
+
+    /* Wait for CMPOK */
+    TEST_ASSERT_TRUE(sleep_manager_can_deep_sleep_test_check());
+
+    const unsigned int us_ticks_before_sleep = us_ticker_read();
 
     sleep();
 
@@ -240,8 +195,12 @@ void deepsleep_high_speed_clocks_turned_off_test()
 
     TEST_ASSERT_UINT32_WITHIN(1000, 0, ticks_to_us(us_ticks_diff, us_ticker_freq));
 
+    sprintf(info, "Delta ticks: %u, Ticker width: %u, Expected wake up tick: %d, Actual wake up tick: %d",
+            us_to_ticks(deepsleep_mode_delta_us, lp_ticker_freq), lp_ticker_width, wakeup_time, lp_ticks_after_sleep);
+
     /* Check if we have woken-up after expected time. */
-    TEST_ASSERT(compare_timestamps(us_to_ticks(deepsleep_mode_delta_us, lp_ticker_freq), lp_ticker_width, wakeup_time, lp_ticks_after_sleep));
+    TEST_ASSERT_MESSAGE(compare_timestamps(us_to_ticks(deepsleep_mode_delta_us, lp_ticker_freq), lp_ticker_width,
+                                           wakeup_time, lp_ticks_after_sleep), info);
 }
 
 #endif
@@ -256,7 +215,9 @@ utest::v1::status_t greentea_test_setup(const size_t number_of_cases)
 {
     GREENTEA_SETUP(60, "default_auto");
     /* Suspend RTOS Kernel to enable sleep modes. */
+#if defined(MBED_CONF_RTOS_PRESENT)
     osKernelSuspend();
+#endif
 #if DEVICE_LPTICKER
     ticker_suspend(get_lp_ticker_data());
 #if DEVICE_LPTICKER && (LPTICKER_DELAY_TICKS > 0)
@@ -282,8 +243,9 @@ void greentea_test_teardown(const size_t passed, const size_t failed, const fail
 #endif
     ticker_resume(get_lp_ticker_data());
 #endif
+#if defined(MBED_CONF_RTOS_PRESENT)
     osKernelResume(0);
-
+#endif
     greentea_test_teardown_handler(passed, failed, failure);
 }
 
@@ -301,3 +263,5 @@ int main()
 {
     Harness::run(specification);
 }
+
+#endif // !DEVICE_SLEEP

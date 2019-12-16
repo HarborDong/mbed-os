@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2017, Arm Limited and affiliates.
+ * Copyright (c) 2014-2019, Arm Limited and affiliates.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -99,6 +99,13 @@ int thread_management_server_joiner_router_init(int8_t interface_id);
  *
  */
 void thread_management_server_joiner_router_deinit(int8_t interface_id);
+
+/** Get service id of management service.
+ *
+ * When using Coap Management port service this service is the only instance used to make client transactions.
+ */
+int8_t thread_management_server_service_id_get(int8_t interface_id);
+
 int8_t thread_management_server_interface_id_get(int8_t coap_service_id);
 
 int thread_management_server_commisoner_data_get(int8_t interface_id, thread_management_server_data_t *server_data);
@@ -126,6 +133,12 @@ bool thread_management_server_source_address_check(int8_t interface_id, uint8_t 
  * \return 0 if response to request is send, negative value in case of error.
  */
 int thread_management_server_tmf_get_request_handler(int8_t interface_id, int8_t coap_service_id, struct sn_coap_hdr_ *request_ptr);
+
+#ifdef HAVE_THREAD_V2
+int thread_management_server_ccm_service_init(int8_t interface_id);
+#else
+#define thread_management_server_ccm_service_init(interface_id)
+#endif
 
 #ifdef __cplusplus
 }

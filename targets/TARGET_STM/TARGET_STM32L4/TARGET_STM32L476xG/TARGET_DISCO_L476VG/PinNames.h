@@ -225,12 +225,12 @@ typedef enum {
     SPI_CS      = PA_4,
     PWM_OUT     = PB_3,
 
-    /**** USB pins ****/
+    /**** USB FS pins ****/
     USB_OTG_FS_DM = PA_11,
     USB_OTG_FS_DP = PA_12,
     USB_OTG_FS_ID = PA_10,
-    USB_OTG_FS_NOE = PC_9,
-    USB_OTG_FS_NOE_ALT0 = PA_13,
+    USB_OTG_FS_NOE = PA_13,
+    USB_OTG_FS_NOE_ALT0 = PC_9,
     USB_OTG_FS_SOF = PA_8,
     USB_OTG_FS_VBUS = PA_9,
 
@@ -258,21 +258,13 @@ typedef enum {
     SYS_WKUP4 = PA_2,
     SYS_WKUP5 = PC_5,
 
-    /**** QSPI pins ****/
-    QSPI1_IO0 = PE_12,
-    QSPI1_IO1 = PE_13,
-    QSPI1_IO2 = PE_14,
-    QSPI1_IO3 = PE_15,
-    QSPI1_SCK = PE_10,
-    QSPI1_CSN = PE_11,
-
     /**** QSPI FLASH pins ****/
-    QSPI_FLASH1_IO0 = QSPI1_IO0,
-    QSPI_FLASH1_IO1 = QSPI1_IO1,
-    QSPI_FLASH1_IO2 = QSPI1_IO2,
-    QSPI_FLASH1_IO3 = QSPI1_IO3,
-    QSPI_FLASH1_SCK = QSPI1_SCK,
-    QSPI_FLASH1_CSN = QSPI1_CSN,
+    QSPI_FLASH1_IO0 = PE_12,
+    QSPI_FLASH1_IO1 = PE_13,
+    QSPI_FLASH1_IO2 = PE_14,
+    QSPI_FLASH1_IO3 = PE_15,
+    QSPI_FLASH1_SCK = PE_10,
+    QSPI_FLASH1_CSN = PE_11,
 
     // Not connected
     NC = (int)0xFFFFFFFF

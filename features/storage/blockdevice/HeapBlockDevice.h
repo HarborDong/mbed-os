@@ -19,12 +19,19 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
  */
+
+/** \addtogroup storage */
+/** @{*/
+
 #ifndef MBED_MEM_BLOCK_DEVICE_H
 #define MBED_MEM_BLOCK_DEVICE_H
 
 #include "BlockDevice.h"
-#include "mbed.h"
+#include "platform/mbed_assert.h"
+#include <string.h>
+#include <stdlib.h>
 
+namespace mbed {
 
 /** Lazily allocated heap-backed block device
  *
@@ -49,8 +56,7 @@
  * }
  * @endcode
  */
-class HeapBlockDevice : public BlockDevice
-{
+class HeapBlockDevice : public BlockDevice {
 public:
 
     /** Lifetime of the memory block device
@@ -59,7 +65,7 @@ public:
      * @param block     Block size in bytes. Minimum read, program, and erase sizes are
      *                  configured to this value
      */
-    HeapBlockDevice(bd_size_t size, bd_size_t block=512);
+    HeapBlockDevice(bd_size_t size, bd_size_t block = 512);
     /** Lifetime of the memory block device
      *
      * @param size      Size of the Block Device in bytes
@@ -144,6 +150,12 @@ public:
      */
     virtual bd_size_t size() const;
 
+    /** Get the BlockDevice class type.
+     *
+     *  @return         A string represent the BlockDevice class type.
+     */
+    virtual const char *get_type() const;
+
 private:
     bd_size_t _read_size;
     bd_size_t _program_size;
@@ -154,5 +166,13 @@ private:
     bool _is_initialized;
 };
 
+} // namespace mbed
+
+// Added "using" for backwards compatibility
+#ifndef MBED_NO_GLOBAL_USING_DIRECTIVE
+using mbed::HeapBlockDevice;
+#endif
 
 #endif
+
+/** @}*/

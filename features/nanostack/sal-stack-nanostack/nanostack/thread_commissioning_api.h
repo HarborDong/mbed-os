@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2017, Arm Limited and affiliates.
+ * Copyright (c) 2015-2018, Arm Limited and affiliates.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -189,8 +189,10 @@ void *thread_commission_device_get_next(void *ptr, int8_t interface_id, bool *sh
 
 typedef struct thread_commissioning_link_configuration {
     uint8_t name[16]; /**< Name of the Thread network. utf8 string nul terminated if shorter than 16. */
+    uint8_t destination_address[16]; /**<Border router destination address*/
     uint8_t extented_pan_id[8]; /**< Extended PAN ID. */
     uint16_t panId; /**< Network ID. */
+    uint16_t destination_port; /**<destination port for commissioning*/
     uint8_t Protocol_id; /**< Current protocol ID. */
     uint8_t version; /**< Current protocol version. */
     uint8_t rfChannel; /**< Current RF channel. */
@@ -206,7 +208,7 @@ typedef struct thread_commissioning_link_configuration {
  * \param link_ptr Poiner to Commissioning link configuration
  *
  */
-typedef void thread_commissioning_native_select_cb(int8_t interface_id, uint8_t count, thread_commissioning_link_configuration_s *link_ptr );
+typedef void thread_commissioning_native_select_cb(int8_t interface_id, uint8_t count, thread_commissioning_link_configuration_s *link_ptr);
 
 /** \brief Native commissioner network scan start.
  *
@@ -270,6 +272,18 @@ int thread_commissioning_native_commissioner_get_connection_info(int8_t interfac
  * \return <= 0 fail.
  */
 int8_t thread_commissioning_get_management_id(int8_t interface_id);
+
+/**
+ * \brief Attach native commissioner to destination address and port.
+ *
+ * \param interface_id Network interface ID.
+ * \param destination_address Destination address pointer.
+ * \param destination_port Commissioning port.
+ *
+ * \return 0 attach OK.
+ * \return < 0 fail.
+ */
+int thread_commissioning_attach(int8_t interface_id, uint8_t *destination_address, uint16_t destination_port);
 
 #ifdef __cplusplus
 }

@@ -125,6 +125,7 @@ void test_error_context_capture()
     mbed_error_status_t status = mbed_get_last_error_info(&error_ctx);
     TEST_ASSERT(status == MBED_SUCCESS);
     TEST_ASSERT_EQUAL_UINT(error_value, error_ctx.error_value);
+#if defined(MBED_CONF_RTOS_PRESENT)
     TEST_ASSERT_EQUAL_UINT((uint32_t)osThreadGetId(), error_ctx.thread_id);
 
     //Capture thread info and compare
@@ -134,6 +135,7 @@ void test_error_context_capture()
     TEST_ASSERT_EQUAL_UINT((uint32_t)current_thread->stack_mem, error_ctx.thread_stack_mem);
 #if MBED_CONF_PLATFORM_ERROR_FILENAME_CAPTURE_ENABLED
     TEST_ASSERT_EQUAL_STRING(MBED_FILENAME, error_ctx.error_filename);
+#endif
 #endif
 }
 
@@ -228,7 +230,7 @@ void test_error_logging_multithread()
         errThread[i] = new Thread(osPriorityNormal1, THREAD_STACK_SIZE, NULL, NULL);
         errThread[i]->start(callback(err_thread_func, &error_status[i]));
     }
-    wait(2.0);
+    ThisThread::sleep_for(2000);
     for (i = 0; i < NUM_TEST_THREADS; i++) {
         errThread[i]->join();
     }
@@ -246,14 +248,17 @@ void test_error_logging_multithread()
 }
 #endif
 
+#if defined(MBED_CONF_RTOS_PRESENT)
 static Semaphore    callback_sem;
 void MyErrorHook(const mbed_error_ctx *error_ctx)
 {
     callback_sem.release();
 }
+#endif
 
 /** Test error hook
  */
+#if defined(MBED_CONF_RTOS_PRESENT)
 void test_error_hook()
 {
     if (MBED_SUCCESS != mbed_set_error_hook(MyErrorHook)) {
@@ -261,10 +266,11 @@ void test_error_hook()
     }
 
     MBED_WARNING1(MBED_ERROR_INVALID_ARGUMENT, "Test for error hook", 1234);
-    int32_t sem_status = callback_sem.wait(5000);
+    bool acquired = callback_sem.try_acquire_for(5000);
 
-    TEST_ASSERT(sem_status > 0);
+    TEST_ASSERT(acquired);
 }
+#endif
 
 #if MBED_CONF_PLATFORM_ERROR_HIST_ENABLED && defined(MBED_TEST_SIM_BLOCKDEVICE)
 
@@ -352,13 +358,11 @@ utest::v1::status_t test_setup(const size_t number_of_cases)
 Case cases[] = {
     Case("Test error counting and reset", test_error_count_and_reset),
     Case("Test error encoding, value capture, first and last errors", test_error_capturing),
-#if MBED_CONF_RTOS_PRESENT
     Case("Test error context capture", test_error_context_capture),
-#endif //MBED_CONF_RTOS_PRESENT
-    Case("Test error hook", test_error_hook),
 #if MBED_CONF_PLATFORM_ERROR_HIST_ENABLED
     Case("Test error logging", test_error_logging),
 #if MBED_CONF_RTOS_PRESENT
+    Case("Test error hook", test_error_hook),
     Case("Test error handling multi-threaded", test_error_logging_multithread),
 #endif //MBED_CONF_RTOS_PRESENT
 #if MBED_CONF_PLATFORM_ERROR_HIST_ENABLED && defined(MBED_TEST_SIM_BLOCKDEVICE)

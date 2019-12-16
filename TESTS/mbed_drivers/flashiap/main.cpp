@@ -17,7 +17,7 @@
 
 #if !DEVICE_FLASH
 #error [NOT_SUPPORTED] Flash API not supported for this target
-#endif
+#else
 
 #include "utest/utest.h"
 #include "utest/utest_serial.h"
@@ -29,6 +29,17 @@
 
 #include "mbed.h"
 
+// Debug available
+#ifndef FLASHIAP_DEBUG
+#define FLASHIAP_DEBUG      0
+#endif
+
+#if FLASHIAP_DEBUG
+#define DEBUG_PRINTF(...) printf(__VA_ARGS__)
+#else
+#define DEBUG_PRINTF(...)
+#endif
+
 using namespace utest::v1;
 
 
@@ -37,6 +48,21 @@ void flashiap_init_test()
     FlashIAP flash_device;
     uint32_t ret = flash_device.init();
     TEST_ASSERT_EQUAL_INT32(0, ret);
+
+    uint32_t flash_start = flash_device.get_flash_start();
+    uint32_t flash_size = flash_device.get_flash_size();
+    utest_printf("Flash address: 0x%08x, size: %d\n", flash_start, flash_size);
+    uint32_t address = flash_start;
+    int num = 0;
+    while (flash_size) {
+        uint32_t sector_size = flash_device.get_sector_size(address);
+        // Make sure all sectors sum up to the total flash size
+        TEST_ASSERT(flash_size >= sector_size);
+        DEBUG_PRINTF("\tsector %3d: address 0x%08x, size %8d\n", num++, address, sector_size);
+        flash_size -= sector_size;
+        address += sector_size;
+    }
+
     ret = flash_device.deinit();
     TEST_ASSERT_EQUAL_INT32(0, ret);
 }
@@ -55,19 +81,30 @@ void flashiap_program_test()
     TEST_ASSERT_TRUE(sector_size % page_size == 0);
     uint32_t prog_size = std::max(page_size, (uint32_t)8);
     uint8_t *data = new uint8_t[prog_size + 2];
-    for (uint32_t i = 0; i < prog_size + 2; i++) {
-        data[i] = i;
-    }
 
     // the one before the last sector in the system
     uint32_t address = (flash_device.get_flash_start() + flash_device.get_flash_size()) - (sector_size);
     TEST_ASSERT_TRUE(address != 0UL);
-    utest_printf("ROM ends at 0x%lx, test starts at 0x%lx\n", FLASHIAP_ROM_END, address);
-    TEST_SKIP_UNLESS_MESSAGE(address >= FLASHIAP_ROM_END, "Test skipped. Test region overlaps code.");
+    utest_printf("ROM ends at 0x%lx, test starts at 0x%lx\n", FLASHIAP_APP_ROM_END_ADDR, address);
+    TEST_SKIP_UNLESS_MESSAGE(address >= FLASHIAP_APP_ROM_END_ADDR, "Test skipped. Test region overlaps code.");
 
     ret = flash_device.erase(address, sector_size);
     TEST_ASSERT_EQUAL_INT32(0, ret);
 
+    uint8_t erase_val = flash_device.get_erase_value();
+    memset(data, erase_val, prog_size);
+
+    uint8_t *data_flashed = new uint8_t[prog_size];
+    for (uint32_t i = 0; i < sector_size / prog_size; i++) {
+        uint32_t page_addr = address + i * prog_size;
+        ret = flash_device.read(data_flashed, page_addr, prog_size);
+        TEST_ASSERT_EQUAL_INT32(0, ret);
+        TEST_ASSERT_EQUAL_UINT8_ARRAY(data, data_flashed, prog_size);
+    }
+
+    for (uint32_t i = 0; i < prog_size + 2; i++) {
+        data[i] = i;
+    }
 
     for (uint32_t i = 0; i < sector_size / prog_size; i++) {
         uint32_t prog_addr = address + i * prog_size;
@@ -75,7 +112,6 @@ void flashiap_program_test()
         TEST_ASSERT_EQUAL_INT32(0, ret);
     }
 
-    uint8_t *data_flashed = new uint8_t[prog_size];
     for (uint32_t i = 0; i < sector_size / prog_size; i++) {
         uint32_t page_addr = address + i * prog_size;
         ret = flash_device.read(data_flashed, page_addr, prog_size);
@@ -107,6 +143,7 @@ void flashiap_cross_sector_program_test()
     TEST_ASSERT_EQUAL_INT32(0, ret);
 
     uint32_t page_size = flash_device.get_page_size();
+    uint8_t erase_value = flash_device.get_erase_value();
 
     // Erase last two sectors
     uint32_t address = flash_device.get_flash_start() + flash_device.get_flash_size();
@@ -118,7 +155,8 @@ void flashiap_cross_sector_program_test()
         agg_size += sector_size;
         address -= sector_size;
     }
-    TEST_SKIP_UNLESS_MESSAGE(address >= FLASHIAP_ROM_END, "Test skipped. Test region overlaps code.");
+    utest_printf("ROM ends at 0x%lx, test starts at 0x%lx\n", FLASHIAP_APP_ROM_END_ADDR, address);
+    TEST_SKIP_UNLESS_MESSAGE(address >= FLASHIAP_APP_ROM_END_ADDR, "Test skipped. Test region overlaps code.");
     ret = flash_device.erase(address, agg_size);
     TEST_ASSERT_EQUAL_INT32(0, ret);
 
@@ -133,7 +171,7 @@ void flashiap_cross_sector_program_test()
         data[i] = rand() % 256;
     }
     for (uint32_t i = prog_size; i < aligned_prog_size; i++) {
-        data[i] = 0xFF;
+        data[i] = erase_value;
     }
 
     ret = flash_device.program(data, address, prog_size);
@@ -174,7 +212,8 @@ void flashiap_program_error_test()
     TEST_ASSERT_TRUE(address != 0UL);
 
     // unaligned address
-    TEST_SKIP_UNLESS_MESSAGE(address >= FLASHIAP_ROM_END, "Test skipped. Test region overlaps code.");
+    utest_printf("ROM ends at 0x%lx, test starts at 0x%lx\n", FLASHIAP_APP_ROM_END_ADDR, address);
+    TEST_SKIP_UNLESS_MESSAGE(address >= FLASHIAP_APP_ROM_END_ADDR, "Test skipped. Test region overlaps code.");
     ret = flash_device.erase(address + 1, sector_size);
     TEST_ASSERT_EQUAL_INT32(-1, ret);
     if (flash_device.get_page_size() > 1) {
@@ -210,6 +249,9 @@ void flashiap_timing_test()
     utest_printf("\nFlash timing:\n");
     uint32_t sector_size = flash_device.get_sector_size(end_address - 1UL);
     uint32_t base_address = end_address - sector_size;
+    utest_printf("ROM ends at 0x%lx, test starts at 0x%lx\n", FLASHIAP_APP_ROM_END_ADDR, base_address);
+    TEST_SKIP_UNLESS_MESSAGE(base_address >= FLASHIAP_APP_ROM_END_ADDR, "Test skipped. Test region overlaps code.");
+
     timer.start();
     for (num_write_sizes = 0; num_write_sizes < max_write_sizes; num_write_sizes++) {
         if (write_size > sector_size) {
@@ -287,3 +329,5 @@ int main()
 {
     Harness::run(specification);
 }
+
+#endif // !DEVICE_FLASH

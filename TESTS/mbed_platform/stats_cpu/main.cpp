@@ -21,15 +21,21 @@
 
 #include "mbed.h"
 
-#if !defined(MBED_CPU_STATS_ENABLED) || !defined(DEVICE_LPTICKER) || !defined(DEVICE_SLEEP)
+#if !defined(MBED_CPU_STATS_ENABLED) || !DEVICE_LPTICKER || !DEVICE_SLEEP
 #error [NOT_SUPPORTED] test not supported
-#endif
+#else
 
 using namespace utest::v1;
 
 DigitalOut led1(LED1);
 
+// Targets with these cores have their RAM enough size to create threads with bigger stacks
+#if defined(__CORTEX_A9) || defined(__CORTEX_M23) || defined(__CORTEX_M33) || defined(__CORTEX_M7)
+#define MAX_THREAD_STACK        512
+#else
 #define MAX_THREAD_STACK        384
+#endif
+
 #define SAMPLE_TIME             1000    // msec
 #define LOOP_TIME               2000    // msec
 
@@ -56,7 +62,7 @@ void get_cpu_usage()
         uint8_t usage = 100 - ((diff * 100) / (SAMPLE_TIME * 1000));
         prev_idle_time = stats.idle_time;
         TEST_ASSERT_NOT_EQUAL(0, usage);
-        Thread::wait(SAMPLE_TIME);
+        ThisThread::sleep_for(SAMPLE_TIME);
     }
 }
 
@@ -65,7 +71,7 @@ void test_cpu_info(void)
     mbed_stats_cpu_t stats;
     // Additional read to make sure timer is initialized
     mbed_stats_cpu_get(&stats);
-    Thread::wait(3);
+    ThisThread::sleep_for(3);
     mbed_stats_cpu_get(&stats);
     TEST_ASSERT_NOT_EQUAL(0, stats.uptime);
     TEST_ASSERT_NOT_EQUAL(0, stats.idle_time);
@@ -83,7 +89,7 @@ void test_cpu_load(void)
 
     // Steadily increase the system load
     for (int count = 1; ; count++) {
-        Thread::wait(LOOP_TIME);
+        ThisThread::sleep_for(LOOP_TIME);
         if (wait_time <= 0) {
             break;
         }
@@ -110,3 +116,5 @@ int main()
 {
     Harness::run(specification);
 }
+
+#endif // !defined(MBED_CPU_STATS_ENABLED) || !DEVICE_LPTICKER || !DEVICE_SLEEP

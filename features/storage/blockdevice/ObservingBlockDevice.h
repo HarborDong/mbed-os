@@ -19,16 +19,20 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
  */
+
+/** \addtogroup storage */
+/** @{*/
+
 #ifndef MBED_OBSERVING_BLOCK_DEVICE_H
 #define MBED_OBSERVING_BLOCK_DEVICE_H
 
 #include "BlockDevice.h"
-#include "PlatformMutex.h"
-#include "Callback.h"
+#include "platform/PlatformMutex.h"
+#include "platform/Callback.h"
 
+namespace mbed {
 
-class ObservingBlockDevice : public BlockDevice
-{
+class ObservingBlockDevice : public BlockDevice {
 public:
 
     /** Lifetime of the block device
@@ -136,11 +140,24 @@ public:
      */
     virtual bd_size_t size() const;
 
+    /** Get the BlockDevice class type.
+     *
+     *  @return         A string represent the BlockDevice class type.
+     */
+    virtual const char *get_type() const;
+
 private:
     BlockDevice *_bd;
     mbed::Callback<void(BlockDevice *)> _change;
 };
 
+} // namespace mbed
 
+// Added "using" for backwards compatibility
+#ifndef MBED_NO_GLOBAL_USING_DIRECTIVE
+using mbed::ObservingBlockDevice;
+#endif
 
 #endif
+
+/** @}*/

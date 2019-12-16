@@ -25,13 +25,15 @@
 #include "lwip/ethip6.h"
 #include "netsocket/nsapi_types.h"
 #include "netsocket/EMAC.h"
+#include "netsocket/L3IP.h"
+#include "netsocket/PPP.h"
 #include "netsocket/OnboardNetworkStack.h"
 #include "LWIPMemoryManager.h"
 
 
 class LWIP : public OnboardNetworkStack, private mbed::NonCopyable<LWIP> {
 public:
-
+    using NetworkStack::get_ip_address;
     static LWIP &get_instance();
 
     class Interface : public OnboardNetworkStack::Interface {
@@ -53,7 +55,7 @@ public:
                                       const char *netmask, const char *gw,
                                       nsapi_ip_stack_t stack = DEFAULT_STACK,
                                       bool blocking = true
-                                      );
+                                     );
 
         /** Disconnect interface from the network
          *
@@ -79,20 +81,42 @@ public:
          */
         virtual nsapi_connection_status_t get_connection_status() const;
 
+        /** Return netif interface name
+         *
+         * @return       netif name  eg "en0"
+        */
+        virtual char *get_interface_name(char *buf);
+
         /** Return MAC address of the network interface
          *
          * @return              MAC address as "V:W:X:Y:Z"
          */
         virtual char *get_mac_address(char *buf, nsapi_size_t buflen);
 
-        /** Copies IP address of the network interface to user supplied buffer
+        /** @copydoc NetworkStack::get_ip_address */
+        virtual nsapi_error_t get_ip_address(SocketAddress *address);
+
+        MBED_DEPRECATED_SINCE("mbed-os-5.15", "String-based APIs are deprecated")
+        virtual char *get_ip_address(char *buf, nsapi_size_t buflen);
+
+        /** Get the IPv6 link local address in SocketAddress representation
          *
-         * @param    emac       EMAC HAL implementation for this network interface
+         *  @address        SocketAddress representation of the link local IPv6 address
+         *  @return         NSAPI_ERROR_OK on success, or error code
+         */
+        virtual nsapi_error_t get_ipv6_link_local_address(SocketAddress *address);
+
+        /** Copies IP address of the name based network interface to user supplied buffer
+         *
          * @param    buf        buffer to which IP address will be copied as "W:X:Y:Z"
          * @param    buflen     size of supplied buffer
+         * @param    interface_name     naame of the interface
          * @return              Pointer to a buffer, or NULL if the buffer is too small
          */
-        virtual char *get_ip_address(char *buf, nsapi_size_t buflen);
+        virtual nsapi_error_t get_ip_address_if(const char *interface_name, SocketAddress *address);
+
+        MBED_DEPRECATED_SINCE("mbed-os-5.15", "String-based APIs are deprecated")
+        virtual char *get_ip_address_if(char *buf, nsapi_size_t buflen, const char *interface_name);
 
         /** Copies netmask of the network interface to user supplied buffer
          *
@@ -100,6 +124,9 @@ public:
          * @param    buflen     size of supplied buffer
          * @return              Pointer to a buffer, or NULL if the buffer is too small
          */
+        virtual nsapi_error_t get_netmask(SocketAddress *address);
+
+        MBED_DEPRECATED_SINCE("mbed-os-5.15", "String-based APIs are deprecated")
         virtual char *get_netmask(char *buf, nsapi_size_t buflen);
 
         /** Copies gateway address of the network interface to user supplied buffer
@@ -108,10 +135,13 @@ public:
          * @param    buflen     size of supplied buffer
          * @return              Pointer to a buffer, or NULL if the buffer is too small
          */
+        virtual nsapi_error_t get_gateway(SocketAddress *address);
+
+        MBED_DEPRECATED_SINCE("mbed-os-5.15", "String-based APIs are deprecated")
         virtual char *get_gateway(char *buf, nsapi_size_t buflen);
 
     private:
-        friend LWIP;
+        friend class LWIP;
 
         Interface();
 
@@ -120,24 +150,61 @@ public:
         static void netif_status_irq(struct netif *netif);
         static Interface *our_if_from_netif(struct netif *netif);
 
-    #if LWIP_ETHERNET
+#if LWIP_ETHERNET
         static err_t emac_low_level_output(struct netif *netif, struct pbuf *p);
-        void emac_input(emac_mem_buf_t *buf);
+        void emac_input(net_stack_mem_buf_t *buf);
         void emac_state_change(bool up);
-    #if LWIP_IGMP
+#if LWIP_IGMP
         static err_t emac_igmp_mac_filter(struct netif *netif, const ip4_addr_t *group, enum netif_mac_filter_action action);
-    #endif
-    #if LWIP_IPV6_MLD
+#endif
+#if LWIP_IPV6_MLD
         static err_t emac_mld_mac_filter(struct netif *netif, const ip6_addr_t *group, enum netif_mac_filter_action action);
-    #endif
+#endif
 
         static err_t emac_if_init(struct netif *netif);
-    #endif
+#endif
+
+#if LWIP_L3IP
+#if LWIP_IPV4
+        static err_t l3ip4_output(struct netif *netif, struct pbuf *p, const ip4_addr_t *ipaddr);
+#endif
+#if LWIP_IPV6
+        static err_t l3ip6_output(struct netif *netif, struct pbuf *p, const ip6_addr_t *ipaddr);
+#endif
+        void l3ip_input(net_stack_mem_buf_t *buf);
+        void l3ip_state_change(bool up);
+#if LWIP_IGMP
+        static err_t l3ip_multicast_ipv4_filter(struct netif *netif, const ip4_addr_t *group, enum netif_mac_filter_action action);
+#endif
+#if LWIP_IPV6_MLD
+        static err_t l3ip_multicast_ipv6_filter(struct netif *netif, const ip6_addr_t *group, enum netif_mac_filter_action action);
+#endif
+
+        static err_t l3ip_if_init(struct netif *netif);
+#endif
+
+#if PPP_SUPPORT
+#if PPP_IPV4_SUPPORT && LWIP_IPV4
+        static err_t ppp4_output(struct netif *netif, struct pbuf *p, const ip4_addr_t *ipaddr);
+#endif
+#if PPP_IPV6_SUPPORT && LWIP_IPV6
+        static err_t ppp6_output(struct netif *netif, struct pbuf *p, const ip6_addr_t *ipaddr);
+#endif
+        void ppp_input(net_stack_mem_buf_t *buf);
+        void ppp_state_change(bool up);
+        static err_t ppp_if_init(struct netif *netif);
+#endif
 
         union {
-    #if LWIP_ETHERNET
+#if LWIP_ETHERNET
             EMAC *emac; /**< HW specific emac implementation */
-    #endif
+#endif
+#if LWIP_L3IP
+            L3IP *l3ip; /**<  L3IP implementation */
+#endif
+#if PPP_SUPPORT
+            PPP *ppp; /**< PPP implementation */
+#endif
             void *hw; /**< alternative implementation pointer - used for PPP */
         };
 
@@ -147,23 +214,24 @@ public:
         osSemaphoreId_t unlinked;
         mbed_rtos_storage_semaphore_t has_any_addr_sem;
         osSemaphoreId_t has_any_addr;
-    #define HAS_ANY_ADDR 1
-    #if PREF_ADDR_TIMEOUT
+#define HAS_ANY_ADDR 1
+#if PREF_ADDR_TIMEOUT
         mbed_rtos_storage_semaphore_t has_pref_addr_sem;
         osSemaphoreId_t has_pref_addr;
-    #define HAS_PREF_ADDR 2
-    #endif
-    #if BOTH_ADDR_TIMEOUT
+#define HAS_PREF_ADDR 2
+#endif
+#if BOTH_ADDR_TIMEOUT
         mbed_rtos_storage_semaphore_t has_both_addr_sem;
         osSemaphoreId_t has_both_addr;
-    #define HAS_BOTH_ADDR 4
-    #endif
+#define HAS_BOTH_ADDR 4
+#endif
+        char _interface_name[NSAPI_INTERFACE_NAME_MAX_SIZE];
         char has_addr_state;
         nsapi_connection_status_t connected;
         bool dhcp_started;
         bool dhcp_has_to_be_set;
         bool blocking;
-        bool ppp;
+        bool ppp_enabled;
         mbed::Callback<void(nsapi_event_t, intptr_t)> client_callback;
         struct netif netif;
         static Interface *list;
@@ -183,6 +251,18 @@ public:
      */
     virtual nsapi_error_t add_ethernet_interface(EMAC &emac, bool default_if, OnboardNetworkStack::Interface **interface_out);
 
+    /** Register a network interface with the IP stack
+     *
+     * Connects L3IP layer with the IP stack and initializes all the required infrastructure.
+     * This function should be called only once for each available interface.
+     *
+     * @param      l3ip             L3IP HAL implementation for this network interface
+     * @param      default_if       true if the interface should be treated as the default one
+     * @param[out] interface_out    pointer to stack interface object controlling the L3IP
+     * @return                      NSAPI_ERROR_OK on success, or error code
+     */
+    virtual nsapi_error_t add_l3ip_interface(L3IP &l3ip, bool default_if, OnboardNetworkStack::Interface **interface_out);
+
     /** Register a PPP interface with the IP stack
      *
      * Connects PPP layer with the IP stack and initializes all the required infrastructure.
@@ -200,7 +280,23 @@ public:
      * @param[out] interface_out    set to interface handle that must be passed to subsequent mbed_stack calls
      * @return                      NSAPI_ERROR_OK on success, or error code
      */
-    nsapi_error_t _add_ppp_interface(void *pcb, bool default_if, nsapi_ip_stack_t stack, LWIP::Interface **interface_out);
+    virtual nsapi_error_t add_ppp_interface(PPP &ppp, bool default_if, OnboardNetworkStack::Interface **interface_out);
+
+    /** Remove a network interface from IP stack
+     *
+     * Removes layer 3 IP objects,network interface from stack list, and shutdown device driver .
+     * @param[out] interface_out    pointer to stack interface object controlling the L3IP
+     * @return                      NSAPI_ERROR_OK on success, or error code
+     */
+    virtual nsapi_error_t remove_l3ip_interface(OnboardNetworkStack::Interface **interface_out);
+
+    /** Remove a network interface from IP stack
+     *
+     * Removes PPP objects,network interface from stack list, and shutdown device driver.
+     * @param[out] interface_out    pointer to stack interface object controlling the PPP
+     * @return                      NSAPI_ERROR_OK on success, or error code
+     */
+    virtual nsapi_error_t remove_ppp_interface(OnboardNetworkStack::Interface **interface_out);
 
     /** Get a domain name server from a list of servers to query
      *
@@ -211,7 +307,15 @@ public:
      *  @param address  Destination for the host address
      *  @return         0 on success, negative error code on failure
      */
-    virtual nsapi_error_t get_dns_server(int index, SocketAddress *address);
+    virtual nsapi_error_t get_dns_server(int index, SocketAddress *address, const char *interface_name);
+
+    /** Add a domain name server to list of servers to query
+     *
+     *  @param address  Destination for the host address
+     *  @param interface_name  Network interface name
+     *  @return         NSAPI_ERROR_OK on success, negative error code on failure
+     */
+    virtual nsapi_error_t add_dns_server(const SocketAddress &address, const char *interface_name);
 
     /** Get the local IP address
      *
@@ -219,6 +323,9 @@ public:
      *                  or null if not yet connected
      */
     virtual const char *get_ip_address();
+    /** Set the network interface as default one
+      */
+    virtual void set_default_interface(OnboardNetworkStack::Interface *interface);
 
 protected:
     LWIP();
@@ -301,7 +408,7 @@ protected:
      *  @return         0 on success, negative error code on failure
      */
     virtual nsapi_error_t socket_accept(nsapi_socket_t server,
-                                        nsapi_socket_t *handle, SocketAddress *address=0);
+                                        nsapi_socket_t *handle, SocketAddress *address = 0);
 
     /** Send data over a TCP socket
      *
@@ -450,13 +557,13 @@ private:
      *  @param func     Callback to be called
      *  @return         0 on success, negative error code on failure
      */
-    nsapi_error_t call_in(int delay, mbed::Callback<void()> func);
+    virtual nsapi_error_t call_in(int delay, mbed::Callback<void()> func);
 
     struct mbed_lwip_socket {
         bool in_use;
 
         struct netconn *conn;
-        struct netbuf *buf;
+        struct pbuf *buf;
         u16_t offset;
 
         void (*cb)(void *);
@@ -478,8 +585,9 @@ private:
     static const ip_addr_t *get_ip_addr(bool any_addr, const struct netif *netif);
     static const ip_addr_t *get_ipv4_addr(const struct netif *netif);
     static const ip_addr_t *get_ipv6_addr(const struct netif *netif);
+    static const ip_addr_t *get_ipv6_link_local_addr(const struct netif *netif);
 
-    static void add_dns_addr(struct netif *lwip_netif);
+    static void add_dns_addr(struct netif *lwip_netif, const char *interface_name);
 
     /* Static arena of sockets */
     struct mbed_lwip_socket arena[MEMP_NUM_NETCONN];
@@ -487,21 +595,29 @@ private:
     struct mbed_lwip_socket *arena_alloc();
     void arena_dealloc(struct mbed_lwip_socket *s);
 
-    static uint32_t next_registered_multicast_member(const struct mbed_lwip_socket *s, uint32_t index) {
-        while (!(s->multicast_memberships_registry & (0x0001 << index))) { index++; }
+    static uint32_t next_registered_multicast_member(const struct mbed_lwip_socket *s, uint32_t index)
+    {
+        while (!(s->multicast_memberships_registry & (0x0001 << index))) {
+            index++;
+        }
         return index;
     }
 
-    static uint32_t next_free_multicast_member(const struct mbed_lwip_socket *s, uint32_t index) {
-        while ((s->multicast_memberships_registry & (0x0001 << index))) { index++; }
+    static uint32_t next_free_multicast_member(const struct mbed_lwip_socket *s, uint32_t index)
+    {
+        while ((s->multicast_memberships_registry & (0x0001 << index))) {
+            index++;
+        }
         return index;
     }
 
-    static void set_multicast_member_registry_bit(struct mbed_lwip_socket *s, uint32_t index) {
+    static void set_multicast_member_registry_bit(struct mbed_lwip_socket *s, uint32_t index)
+    {
         s->multicast_memberships_registry |= (0x0001 << index);
     }
 
-    static void clear_multicast_member_registry_bit(struct mbed_lwip_socket *s, uint32_t index) {
+    static void clear_multicast_member_registry_bit(struct mbed_lwip_socket *s, uint32_t index)
+    {
         s->multicast_memberships_registry &= ~(0x0001 << index);
     }
     static int32_t find_multicast_member(const struct mbed_lwip_socket *s, const nsapi_ip_mreq_t *imr);
@@ -512,11 +628,12 @@ private:
     static void tcpip_thread_callback(void *ptr);
 
     char ip_address[40];
-    rtos::Semaphore tcpip_inited;
     Interface *default_interface;
     LWIPMemoryManager memory_manager;
     osThreadId tcpip_thread_id;
     rtos::Mutex adaptation;
+    rtos::EventFlags _event_flag;
+    static const int TCP_CLOSED_FLAG = 0x4u;
 };
 
 #endif /* LWIPSTACK_H_ */

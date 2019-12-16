@@ -15,7 +15,7 @@
  */
 #if !DEVICE_USTICKER
 #error [NOT_SUPPORTED] usticker not supported for this target.
-#endif
+#else
 
 #include "mbed.h"
 #include "greentea-client/test_env.h"
@@ -26,10 +26,6 @@
 #include "rtos.h"
 
 using namespace utest::v1;
-
-#if !DEVICE_USTICKER
-#error [NOT_SUPPORTED] test not supported
-#endif
 
 #define TEST_DELAY_US 50000ULL
 #define DELTA         2
@@ -65,15 +61,15 @@ public:
     using TimerEvent::insert_absolute;
     using TimerEvent::remove;
 
-    int32_t sem_wait(uint32_t millisec)
+    bool sem_try_acquire(uint32_t millisec)
     {
-        return sem.wait(millisec);
+        return sem.try_acquire_for(millisec);
     }
 };
 
 class TestTimerEventRelative: public TestTimerEvent {
 public:
-    static const int32_t SEM_SLOTS_AFTER_PAST_TS_INSERTED = 0;
+    static const bool SEM_ACQUIRED_AFTER_PAST_TS_INSERTED = false;
     TestTimerEventRelative() :
         TestTimerEvent()
     {
@@ -98,7 +94,7 @@ public:
 
 class TestTimerEventAbsolute: public TestTimerEvent {
 public:
-    static const int32_t SEM_SLOTS_AFTER_PAST_TS_INSERTED = 1;
+    static const bool SEM_ACQUIRED_AFTER_PAST_TS_INSERTED = true;
     TestTimerEventAbsolute() :
         TestTimerEvent()
     {
@@ -141,11 +137,11 @@ void test_insert(void)
     T tte;
 
     tte.set_future_timestamp(TEST_DELAY_US);
-    int32_t sem_slots = tte.sem_wait(0);
-    TEST_ASSERT_EQUAL(0, sem_slots);
+    bool acquired = tte.sem_try_acquire(0);
+    TEST_ASSERT_FALSE(acquired);
 
-    sem_slots = tte.sem_wait(TEST_DELAY_US / 1000 + DELTA);
-    TEST_ASSERT_EQUAL(1, sem_slots);
+    acquired = tte.sem_try_acquire(TEST_DELAY_US / 1000 + DELTA);
+    TEST_ASSERT_TRUE(acquired);
 
     tte.remove();
 }
@@ -170,12 +166,12 @@ void test_remove(void)
     T tte;
 
     tte.set_future_timestamp(TEST_DELAY_US * 2);
-    int32_t sem_slots = tte.sem_wait(TEST_DELAY_US / 1000);
-    TEST_ASSERT_EQUAL(0, sem_slots);
+    bool acquired = tte.sem_try_acquire(TEST_DELAY_US / 1000);
+    TEST_ASSERT_FALSE(acquired);
     tte.remove();
 
-    sem_slots = tte.sem_wait(TEST_DELAY_US * 2 / 1000 + DELTA);
-    TEST_ASSERT_EQUAL(0, sem_slots);
+    acquired = tte.sem_try_acquire(TEST_DELAY_US * 2 / 1000 + DELTA);
+    TEST_ASSERT_FALSE(acquired);
 }
 
 /** Test insert_absolute zero
@@ -188,8 +184,8 @@ void test_insert_zero(void)
     TestTimerEvent tte;
 
     tte.insert_absolute(0ULL);
-    int32_t sem_slots = tte.sem_wait(0);
-    TEST_ASSERT_EQUAL(1, sem_slots);
+    bool acquired = tte.sem_try_acquire(0);
+    TEST_ASSERT_TRUE(acquired);
 
     tte.remove();
 }
@@ -215,8 +211,8 @@ void test_insert_past(void)
     T tte;
 
     tte.set_past_timestamp();
-    int32_t sem_slots = tte.sem_wait(0);
-    TEST_ASSERT_EQUAL(tte.SEM_SLOTS_AFTER_PAST_TS_INSERTED, sem_slots);
+    bool acquired = tte.sem_try_acquire(0);
+    TEST_ASSERT_EQUAL(tte.SEM_ACQUIRED_AFTER_PAST_TS_INSERTED, acquired);
 
     tte.remove();
 }
@@ -246,3 +242,5 @@ int main()
 {
     return !Harness::run(specification);
 }
+
+#endif // !DEVICE_USTICKER

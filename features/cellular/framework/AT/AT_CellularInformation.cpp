@@ -17,11 +17,12 @@
 
 #include <stdio.h>
 
+#include "AT_CellularDevice.h"
 #include "AT_CellularInformation.h"
 
 using namespace mbed;
 
-AT_CellularInformation::AT_CellularInformation(ATHandler &at) : AT_CellularBase(at)
+AT_CellularInformation::AT_CellularInformation(ATHandler &at, AT_CellularDevice &device) : _at(at), _device(device)
 {
 }
 
@@ -46,35 +47,59 @@ nsapi_error_t AT_CellularInformation::get_revision(char *buf, size_t buf_size)
 
 nsapi_error_t AT_CellularInformation::get_serial_number(char *buf, size_t buf_size, SerialNumberType type)
 {
+    if (buf == NULL || buf_size == 0) {
+        return NSAPI_ERROR_PARAMETER;
+    }
+
     if (type == SN) {
         return get_info("AT+CGSN", buf, buf_size);
     }
 
-    if (!is_supported(AT_CGSN_WITH_TYPE)) {
+    if (!_device.get_property(AT_CellularDevice::PROPERTY_AT_CGSN_WITH_TYPE)) {
         return NSAPI_ERROR_UNSUPPORTED;
     }
 
-    _at.lock();
-    _at.cmd_start("AT+CGSN=");
-    _at.write_int(type);
-    _at.cmd_stop();
-    _at.resp_start("+CGSN:");
-    _at.read_string(buf, buf_size);
-    _at.resp_stop();
-    return _at.unlock_return_error();
+    return _at.at_cmd_str("+CGSN", "=", buf, buf_size, "%d", type);
 }
 
 nsapi_error_t AT_CellularInformation::get_info(const char *cmd, char *buf, size_t buf_size)
 {
+    if (buf == NULL || buf_size == 0) {
+        return NSAPI_ERROR_PARAMETER;
+    }
     _at.lock();
-
     _at.cmd_start(cmd);
     _at.cmd_stop();
     _at.set_delimiter(0);
     _at.resp_start();
-    _at.read_string(buf, buf_size - 1);
+    _at.read_string(buf, buf_size);
     _at.resp_stop();
     _at.set_default_delimiter();
-
     return _at.unlock_return_error();
+}
+
+nsapi_error_t AT_CellularInformation::get_imsi(char *imsi, size_t buf_size)
+{
+    if (imsi == NULL || buf_size == 0 || buf_size < MAX_IMSI_LENGTH + 1) {
+        return NSAPI_ERROR_PARAMETER;
+    }
+    _at.lock();
+    _at.cmd_start_stop("+CIMI", "");
+    _at.resp_start();
+    _at.read_string(imsi, MAX_IMSI_LENGTH + 1);
+    _at.resp_stop();
+    return _at.unlock_return_error();
+}
+
+nsapi_error_t AT_CellularInformation::get_iccid(char *buf, size_t buf_size)
+{
+    if (buf == NULL || buf_size == 0) {
+        return NSAPI_ERROR_PARAMETER;
+    }
+    return _at.at_cmd_str("+CCID", "?", buf, buf_size);
+}
+
+ATHandler &AT_CellularInformation::get_at_handler()
+{
+    return _at;
 }

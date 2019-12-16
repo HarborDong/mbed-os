@@ -13,10 +13,13 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+#if !defined(MBED_CONF_RTOS_PRESENT)
+#error [NOT_SUPPORTED] Low power timer test cases require a RTOS to run.
+#else
 
 #if !DEVICE_LPTICKER
 #error [NOT_SUPPORTED] Low power timer not supported for this target
-#endif
+#else
 
 #include "mbed.h"
 #include "greentea-client/test_env.h"
@@ -75,8 +78,10 @@ Case cases[] = {
          greentea_failure_handler),
 #endif
 
+#if !defined(SKIP_TIME_DRIFT_TESTS)
     Case("Timing drift (attach)", test_drift<AttachTester<LowPowerTimeout> >),
     Case("Timing drift (attach_us)", test_drift<AttachUSTester<LowPowerTimeout> >),
+#endif
 };
 
 utest::v1::status_t greentea_test_setup(const size_t number_of_cases)
@@ -91,3 +96,6 @@ int main()
 {
     Harness::run(specification);
 }
+
+#endif // !DEVICE_LPTICKER
+#endif //!defined(MBED_CONF_RTOS_PRESENT)

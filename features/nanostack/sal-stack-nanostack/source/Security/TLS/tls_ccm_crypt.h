@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, Arm Limited and affiliates.
+ * Copyright (c) 2017-2018, Arm Limited and affiliates.
  * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,7 +18,7 @@
 #ifndef TLS_CCM_CRYPT_H_
 #define TLS_CCM_CRYPT_H_
 
-int8_t tls_ccm_data_encrypt(uint8_t *data_ptr, uint16_t data_length,const uint8_t *key_expansion, const uint8_t *nonce, uint8_t type, bool server);
-int8_t tls_ccm_data_decrypt(uint8_t *data_ptr, uint16_t data_length,const uint8_t *key_expansion, uint8_t type, bool server);
+int8_t tls_ccm_data_encrypt(uint8_t *data_ptr, uint16_t data_length, const uint8_t *key_expansion, const uint8_t *nonce, uint8_t type, bool server);
+int8_t tls_ccm_data_decrypt(uint8_t *data_ptr, uint16_t data_length, const uint8_t *key_expansion, uint8_t type, bool server);
 
 #endif /* TLS_CCM_CRYPT_H_ */

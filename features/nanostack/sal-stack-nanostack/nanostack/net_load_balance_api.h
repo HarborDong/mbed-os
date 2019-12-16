@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2017, Arm Limited and affiliates.
+ * Copyright (c) 2016-2018, Arm Limited and affiliates.
  * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,7 +18,7 @@
 /**
  * \file net_load_balance_api.h
  * \brief 6LoWPAN network load balance control API.
- */ 
+ */
 
 #ifndef NET_LOAD_BALANCE_API_H_
 #define NET_LOAD_BALANCE_API_H_
@@ -87,7 +87,7 @@ int8_t net_load_balance_threshold_set(int8_t interface_id, uint8_t threshold_min
  *
  * \return 0 Process OK, -1 Unknown interface ID or parameter fail.
  */
-int8_t net_load_balance_set_max_probability(int8_t interface_id , uint8_t max_p);
+int8_t net_load_balance_set_max_probability(int8_t interface_id, uint8_t max_p);
 
 /**
  * \brief Set load balance expected device count and enable automatic network load level update.

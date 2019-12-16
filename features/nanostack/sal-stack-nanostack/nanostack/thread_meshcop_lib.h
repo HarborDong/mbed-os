@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2017, Arm Limited and affiliates.
+ * Copyright (c) 2015-2018, Arm Limited and affiliates.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -147,6 +147,39 @@
 #define MESHCOP_TLV_DURATION                               56
 /** Energy List TLV. */
 #define MESHCOP_TLV_ENERGY_LIST                            57
+
+/** Thread 1.2 */
+
+/** Timeout TLV. */
+#define MESHCOP_TLV_TIMEOUT                                58
+
+/** Thread domain name TLV. */
+#define MESHCOP_TLV_DOMAIN_NAME                            59
+
+/** Domain prefix TLV TLV.*/
+#define MESHCOP_TLV_DOMAIN_PREFIX                          60
+
+/** AE Steering Data TLV. */
+#define MESHCOP_TLV_AE_STEERING_DATA                       61
+
+/** NMKP Steering Data TLV. */
+#define MESHCOP_TLV_NMKP_STEERING_DATA                     62
+
+/** Commissioner Token TLV. */
+#define MESHCOP_TLV_COMM_TOKEN                             63
+
+/** Commissioner Signature TLV. */
+#define MESHCOP_TLV_COMM_SIGNATURE                         64
+
+/** NMKP Steering Data TLV. */
+#define MESHCOP_TLV_AE_PORT                                65
+
+/** NMKP Steering Data TLV. */
+#define MESHCOP_TLV_NMKP_PORT                              66
+
+/** Registrar IPV6 address. */
+#define MESHCOP_TLV_REGISTRAR_IPV6_ADDRESS                 68
+
 
 /** Discovery Request TLV. */
 #define MESHCOP_TLV_DISCOVERY_REQUEST                      128
@@ -303,7 +336,7 @@ bool thread_meshcop_tlv_list_present(const uint8_t *ptr, uint16_t length, const 
  *
  * \return amount of TLVs present in the buffer.
  */
-uint16_t thread_meshcop_tlv_list_generate(const uint8_t *ptr, uint16_t length,uint8_t *result_ptr, uint16_t *result_len);
+uint16_t thread_meshcop_tlv_list_generate(const uint8_t *ptr, uint16_t length, uint8_t *result_ptr, uint16_t *result_len);
 
 /**
  * Remove TLV from list of TLVs.
@@ -338,7 +371,7 @@ bool thread_meshcop_tlv_list_type_available(const uint8_t *list_ptr, uint16_t li
  *
  * \return The length of the TLV data found and found_tlv updated to point beginning of value field. 0 if TLV is not found.
  */
-uint16_t thread_meshcop_tlv_find_next(uint8_t* tlv_ba, uint16_t tlv_ba_length, uint8_t tlv_id, uint8_t** found_tlv);
+uint16_t thread_meshcop_tlv_find_next(uint8_t *tlv_ba, uint16_t tlv_ba_length, uint8_t tlv_id, uint8_t **found_tlv);
 
 /**
  * Read 1 byte length TLV.

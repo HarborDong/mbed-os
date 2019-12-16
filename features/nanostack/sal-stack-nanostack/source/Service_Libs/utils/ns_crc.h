@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2017, Arm Limited and affiliates.
+ * Copyright (c) 2015-2018, Arm Limited and affiliates.
  * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,12 +19,12 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-  
+
 #include <stdint.h>
 
 
 /// @todo documentation
-    
+
 /** same as crc16_ibm */
 uint16_t crc16_ansi(uint8_t *message, int nBytes);
 uint16_t crc16_ccitt(uint8_t *message, int nBytes);
@@ -35,7 +35,7 @@ uint16_t crc16_ccitt(uint8_t *message, int nBytes);
  *  @param polynomial   Polynomial which will be used to calculate CRC, POLYNOMIAL_CRC15_CCIT, POLYNOMIAL_CRC15_ANSI
  *  @return Calculated 16bit CRC value
  */
-uint16_t crc16_calc(uint8_t* data, uint16_t data_length, uint16_t polynomial);
+uint16_t crc16_calc(uint8_t *data, uint16_t data_length, uint16_t polynomial);
 
 #ifdef __cplusplus
 }

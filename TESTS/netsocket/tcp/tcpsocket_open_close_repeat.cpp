@@ -15,6 +15,7 @@
  * limitations under the License.
  */
 
+#if defined(MBED_CONF_RTOS_PRESENT)
 #include "greentea-client/test_env.h"
 #include "mbed.h"
 #include "tcp_tests.h"
@@ -26,14 +27,16 @@ using namespace utest::v1;
 
 void TCPSOCKET_OPEN_CLOSE_REPEAT()
 {
+    SKIP_IF_TCP_UNSUPPORTED();
     TCPSocket *sock = new TCPSocket;
     if (!sock) {
         TEST_FAIL();
     }
 
     for (int i = 0; i < 2; i++) {
-        TEST_ASSERT_EQUAL(NSAPI_ERROR_OK, sock->open(get_interface()));
+        TEST_ASSERT_EQUAL(NSAPI_ERROR_OK, sock->open(NetworkInterface::get_default_instance()));
         TEST_ASSERT_EQUAL(NSAPI_ERROR_OK, sock->close());
     }
     delete sock;
 }
+#endif // defined(MBED_CONF_RTOS_PRESENT)

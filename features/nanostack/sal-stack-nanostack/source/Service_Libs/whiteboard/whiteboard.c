@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2017, Arm Limited and affiliates.
+ * Copyright (c) 2013-2018, Arm Limited and affiliates.
  * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -59,7 +59,7 @@ void whiteboard_init_by_prefix(int8_t id, const uint8_t address[static 8])
 {
     ns_list_foreach_safe(whiteboard_entry_int_t, cur, &whiteboard_info) {
         if (cur->entry.interface_index == id) {
-            if (memcmp(cur->entry.address,address,8 ) == 0) {
+            if (memcmp(cur->entry.address, address, 8) == 0) {
                 whiteboard_remove_entry(cur);
             }
         }
@@ -70,7 +70,7 @@ void whiteboard_rm_entry(int8_t id, const uint8_t address[static 16])
 {
     ns_list_foreach_safe(whiteboard_entry_int_t, cur, &whiteboard_info) {
         if (cur->entry.interface_index == id) {
-            if (memcmp(cur->entry.address,address,16 ) == 0) {
+            if (memcmp(cur->entry.address, address, 16) == 0) {
 
                 whiteboard_remove_entry(cur);
                 return;

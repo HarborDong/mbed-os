@@ -121,7 +121,7 @@ public:
         SecurityEntrySigningDbCb_t;
     typedef mbed::Callback<void(entry_handle_t, const SecurityEntryIdentity_t*)>
         SecurityEntryIdentityDbCb_t;
-    typedef mbed::Callback<void(ArrayView<SecurityEntryIdentity_t>&, size_t count)>
+    typedef mbed::Callback<void(Span<SecurityEntryIdentity_t>&, size_t count)>
         IdentitylistDbCb_t;
     typedef mbed::Callback<void(::Gap::Whitelist_t*)>
         WhitelistDbCb_t;
@@ -340,7 +340,7 @@ public:
      */
     virtual void get_identity_list(
         IdentitylistDbCb_t cb,
-        ArrayView<SecurityEntryIdentity_t>& identity_list
+        Span<SecurityEntryIdentity_t>& identity_list
     ) {
         size_t count = 0;
         for (size_t i = 0; i < get_entry_count() && count < identity_list.size(); ++i) {
@@ -603,7 +603,7 @@ public:
                 sizeof(BLEProtocol::AddressBytes_t)
             );
 
-            if (flags->peer_address_is_public) {
+            if (identity->identity_address_is_public) {
                 whitelist->addresses[whitelist->size].type = BLEProtocol::AddressType::PUBLIC;
             } else {
                 whitelist->addresses[whitelist->size].type = BLEProtocol::AddressType::RANDOM_STATIC;

@@ -46,11 +46,12 @@ int fhss_ws_set_callbacks(fhss_structure_t *fhss_structure)
     return -1;
 }
 
-int fhss_ws_set_parent(fhss_structure_t *fhss_structure, const uint8_t eui64[8], const broadcast_timing_info_t *bc_timing_info)
+int fhss_ws_set_parent(fhss_structure_t *fhss_structure, const uint8_t eui64[8], const broadcast_timing_info_t *bc_timing_info, const bool force_synch)
 {
     (void) fhss_structure;
     (void) eui64;
     (void) bc_timing_info;
+    (void) force_synch;
 
     return -1;
 }
