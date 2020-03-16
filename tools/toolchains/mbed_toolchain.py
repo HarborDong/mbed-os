@@ -2,6 +2,7 @@
 mbed SDK
 SPDX-License-Identifier: Apache-2.0
 Copyright (c) 2011-2013 ARM Limited
+SPDX-License-Identifier: Apache-2.0
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -109,6 +110,7 @@ CORTEX_SYMBOLS = {
                         "__MBED_CMSIS_RTOS_CM", "__DSP_PRESENT=1U"],
 }
 
+UNSUPPORTED_C_LIB_EXCEPTION_STRING = "{} C library option not supported for this target."
 
 class mbedToolchain(with_metaclass(ABCMeta, object)):
     OFFICIALLY_SUPPORTED = False
@@ -131,7 +133,7 @@ class mbedToolchain(with_metaclass(ABCMeta, object)):
     profile_template = {'common': [], 'c': [], 'cxx': [], 'asm': [], 'ld': []}
 
     def __init__(self, target, notify=None, macros=None, build_profile=None,
-                 build_dir=None):
+                 build_dir=None, coverage_patterns=None):
         self.target = target
         self.name = self.__class__.__name__
 
@@ -188,6 +190,9 @@ class mbedToolchain(with_metaclass(ABCMeta, object)):
 
         # Used by the mbed Online Build System to build in chrooted environment
         self.CHROOT = None
+
+        self.coverage_supported = False
+        self.coverage_patterns = coverage_patterns
 
         # post-init hook used by the online compiler TODO: remove this.
         self.init()
@@ -894,56 +899,64 @@ class mbedToolchain(with_metaclass(ABCMeta, object)):
     def add_regions(self):
         """Add regions to the build profile, if there are any.
         """
-
-        if not getattr(self.target, "bootloader_supported", False):
-            return
-
         if self.config.has_regions:
-            regions = list(self.config.regions)
-            regions.sort(key=lambda x: x.start)
-            self.notify.info("Using ROM region%s %s in this build." % (
-                "s" if len(regions) > 1 else "",
-                ", ".join(r.name for r in regions)
-            ))
-            self._add_all_regions(regions, "MBED_APP")
+            try:
+                regions = list(self.config.regions)
+                regions.sort(key=lambda x: x.start)
+                self.notify.info("Using ROM region%s %s in this build." % (
+                    "s" if len(regions) > 1 else "",
+                    ", ".join(r.name for r in regions)
+                ))
+                self._add_all_regions(regions, "MBED_APP")
+            except ConfigException as error:
+                self.notify.info("Configuration error: %s" % str(error))
 
         if self.config.has_ram_regions:
-            regions = list(self.config.ram_regions)
-            self.notify.info("Using RAM region%s %s in this build." % (
-                "s" if len(regions) > 1 else "",
-                ", ".join(r.name for r in regions)
-            ))
-            self._add_all_regions(regions, None)
+            try:
+                regions = list(self.config.ram_regions)
+                self.notify.info("Using RAM region%s %s in this build." % (
+                    "s" if len(regions) > 1 else "",
+                    ", ".join(r.name for r in regions)
+                ))
+                self._add_all_regions(regions, None)
+            except ConfigException as error:
+                self.notify.info("Configuration error: %s" % str(error))
 
         Region = namedtuple("Region", "name start size")
 
+        if not getattr(self.target, "static_memory_defines", False):
+            self.notify.info("Configuration error: 'static_memory_defines' is not defined.")
+            return
 
-        # Add all available ROM regions to build profile
-        if not getattr(self.target, "static_memory_defines", False):
-            raise ConfigException()
-        rom_available_regions = self.config.get_all_active_memories(
-            ROM_ALL_MEMORIES
-        )
-        for key, value in rom_available_regions.items():
-            rom_start, rom_size = value
-            self._add_defines_from_region(
-                Region("MBED_" + key, rom_start, rom_size),
-                True,
-                suffixes=["_START", "_SIZE"]
+        try:
+            # Add all available ROM regions to build profile
+            rom_available_regions = self.config.get_all_active_memories(
+                ROM_ALL_MEMORIES
             )
-        # Add all available RAM regions to build profile
-        if not getattr(self.target, "static_memory_defines", False):
-            raise ConfigException()
-        ram_available_regions = self.config.get_all_active_memories(
-            RAM_ALL_MEMORIES
-        )
-        for key, value in ram_available_regions.items():
-            ram_start, ram_size = value
-            self._add_defines_from_region(
-                Region("MBED_" + key, ram_start, ram_size),
-                True,
-                suffixes=["_START", "_SIZE"]
+            for key, value in rom_available_regions.items():
+                rom_start, rom_size = value
+                self._add_defines_from_region(
+                    Region("MBED_" + key, rom_start, rom_size),
+                    True,
+                    suffixes=["_START", "_SIZE"]
+                )
+        except ConfigException as error:
+            self.notify.info("Configuration error: %s" % str(error))
+
+        try:
+            # Add all available RAM regions to build profile
+            ram_available_regions = self.config.get_all_active_memories(
+                RAM_ALL_MEMORIES
             )
+            for key, value in ram_available_regions.items():
+                ram_start, ram_size = value
+                self._add_defines_from_region(
+                    Region("MBED_" + key, ram_start, ram_size),
+                    True,
+                    suffixes=["_START", "_SIZE"]
+                )
+        except ConfigException as error:
+            self.notify.info("Configuration error: %s" % str(error))
 
     STACK_PARAM = "target.boot-stack-size"
     TFM_LVL_PARAM = "tfm.level"
@@ -1085,6 +1098,28 @@ class mbedToolchain(with_metaclass(ABCMeta, object)):
             and "-DMBED_MINIMAL_PRINTF" not in self.flags["common"]
         ):
             self.flags["common"].append("-DMBED_MINIMAL_PRINTF")
+
+    def check_c_lib_supported(self, target, toolchain):
+        """
+        Check and raise an exception if the requested C library is not supported,
+
+        target.c_lib is modified to have the lowercased string of its original string.
+        This is done to be case insensitive when validating.
+        """
+        if  hasattr(target, "default_lib"):
+            raise NotSupportedException(
+                   "target.default_lib is no longer supported, please use target.c_lib for C library selection."
+                )
+        if  hasattr(target, "c_lib"):
+            target.c_lib = target.c_lib.lower()
+            if (
+                hasattr(target, "supported_c_libs") == False
+                or toolchain not in target.supported_c_libs
+                or target.c_lib not in target.supported_c_libs[toolchain]
+            ):
+                raise NotSupportedException(
+                   UNSUPPORTED_C_LIB_EXCEPTION_STRING.format(target.c_lib)
+                )
 
     @staticmethod
     def _overwrite_when_not_equal(filename, content):

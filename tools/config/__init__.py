@@ -511,7 +511,9 @@ class Config(object):
             resolver = RefResolver(uri, schema)
             validator = Draft4Validator(schema, resolver=resolver)
 
-            errors = sorted(validator.iter_errors(self.app_config_data))
+            errors = sorted(
+                validator.iter_errors(self.app_config_data), key=str
+            )
 
             if errors:
                 raise ConfigException("; ".join(
@@ -583,7 +585,7 @@ class Config(object):
             resolver = RefResolver(uri, schema_file)
             validator = Draft4Validator(schema_file, resolver=resolver)
 
-            errors = sorted(validator.iter_errors(cfg))
+            errors = sorted(validator.iter_errors(cfg), key=str)
 
             if errors:
                 raise ConfigException("; ".join(
@@ -796,12 +798,12 @@ class Config(object):
             start, size = self._get_primary_memory_override(
                 active_memory.lower()
             )
-            if not start:
+            if start is None:
                 raise ConfigException(
                     "Bootloader not supported on this target. {} "
                     "start not found in targets.json.".format(active_memory)
                 )
-            if not size:
+            if size is None:
                 raise ConfigException(
                     "Bootloader not supported on this target. {} "
                     "size not found in targets.json.".format(active_memory)

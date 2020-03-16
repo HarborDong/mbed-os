@@ -1,5 +1,6 @@
 /* mbed Microcontroller Library
  * Copyright (c) 2006-2012 ARM Limited
+ * SPDX-License-Identifier: MIT
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -56,7 +57,7 @@ void Mutex::constructor(const char *name)
     MBED_ASSERT(_id || mbed_get_error_in_progress());
 }
 
-osStatus Mutex::lock(void)
+void Mutex::lock(void)
 {
     osStatus status = osMutexAcquire(_id, osWaitForever);
     if (osOK == status) {
@@ -66,26 +67,6 @@ osStatus Mutex::lock(void)
     if (status != osOK && !mbed_get_error_in_progress()) {
         MBED_ERROR1(MBED_MAKE_ERROR(MBED_MODULE_KERNEL, MBED_ERROR_CODE_MUTEX_LOCK_FAILED), "Mutex lock failed", status);
     }
-
-    return osOK;
-}
-
-osStatus Mutex::lock(uint32_t millisec)
-{
-    osStatus status = osMutexAcquire(_id, millisec);
-    if (osOK == status) {
-        _count++;
-    }
-
-    bool success = (status == osOK ||
-                    (status == osErrorResource && millisec == 0) ||
-                    (status == osErrorTimeout && millisec != osWaitForever));
-
-    if (!success && !mbed_get_error_in_progress()) {
-        MBED_ERROR1(MBED_MAKE_ERROR(MBED_MODULE_KERNEL, MBED_ERROR_CODE_MUTEX_LOCK_FAILED), "Mutex lock failed", status);
-    }
-
-    return status;
 }
 
 bool Mutex::trylock()
@@ -126,7 +107,7 @@ bool Mutex::trylock_until(uint64_t millisec)
     }
 }
 
-osStatus Mutex::unlock()
+void Mutex::unlock()
 {
     osStatus status = osMutexRelease(_id);
     if (osOK == status) {
@@ -136,8 +117,6 @@ osStatus Mutex::unlock()
     if (status != osOK && !mbed_get_error_in_progress()) {
         MBED_ERROR1(MBED_MAKE_ERROR(MBED_MODULE_KERNEL, MBED_ERROR_CODE_MUTEX_UNLOCK_FAILED), "Mutex unlock failed", status);
     }
-
-    return status;
 }
 
 osThreadId Mutex::get_owner()

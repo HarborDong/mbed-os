@@ -62,11 +62,7 @@ public:
 
     virtual void set_extra_sim_wait_time(int sim_wait_time);
 
-public:
-    ATHandler &get_at_handler();
-
 private:
-
     struct sms_info_t {
         char date[SMS_MAX_TIME_STAMP_SIZE];
         uint16_t msg_index[50]; // can hold up to 50 concatenated msg parts, indexes are in correct order. So max sms size is 50*140 =  7kb
@@ -77,14 +73,6 @@ private:
         struct sms_info_t *next_info;
         sms_info_t() : msg_size(0), parts(1), parts_added(1), msg_ref_number(0), next_info(0) {};
     };
-
-    // application callback function for received sms
-    Callback<void()> _cb;
-    CellularSMSMmode _mode;
-    bool _use_8bit_encoding;
-    uint32_t _sim_wait_time;
-    uint16_t _sms_message_ref_number;
-    sms_info_t *_sms_info;
 
     // SMS urc's
     void cmt_urc();
@@ -171,8 +159,15 @@ private:
                                      int msg_len);
 
 private:
-    ATHandler &_at;
+    // application callback function for received sms
+    Callback<void()> _cb;
+    CellularSMSMmode _mode;
+    bool _use_8bit_encoding;
+    uint32_t _sim_wait_time;
+    uint16_t _sms_message_ref_number;
+    sms_info_t *_sms_info;
 
+    ATHandler &_at;
     AT_CellularDevice &_device;
 };
 

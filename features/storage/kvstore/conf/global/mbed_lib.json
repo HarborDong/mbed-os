@@ -11,6 +11,9 @@
         }
     },
     "target_overrides": {
+        "HANI_IOT": {
+            "storage_type": "TDB_INTERNAL"
+        },
         "K66F": {
             "storage_type": "TDB_INTERNAL"
         },
@@ -39,6 +42,9 @@
             "storage_type": "TDB_INTERNAL"
         },
         "ARM_MUSCA_A1_S": {
+            "storage_type": "TDB_INTERNAL"
+        },
+        "ARM_MUSCA_B1_S": {
             "storage_type": "TDB_INTERNAL"
         }
     }

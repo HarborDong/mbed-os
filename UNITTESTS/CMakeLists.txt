@@ -19,6 +19,13 @@ endmacro()
 
 use_cxx14()
 
+
+if (MINGW)
+  # enable PRIx formatting globally
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D__STDC_FORMAT_MACROS")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D__STDC_FORMAT_MACROS")
+endif (MINGW)
+
 ####################
 # GTEST
 ####################
@@ -81,6 +88,10 @@ if (COVERAGE)
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${COVERAGE_COMPILER_FLAGS}")
 
 endif(COVERAGE)
+
+if (VALGRIND)
+  find_program(MEMORYCHECK_COMMAND valgrind)
+endif(VALGRIND)
 
 ####################
 # UNIT TESTS
@@ -196,6 +207,7 @@ foreach(testfile ${unittest-file-list})
   if (unittest-test-sources)
     # Create the executable.
     add_executable(${TEST_SUITE_NAME} ${unittest-test-sources})
+
     target_include_directories(${TEST_SUITE_NAME} PRIVATE
       ${unittest-includes})
     target_compile_options(${TEST_SUITE_NAME} PRIVATE

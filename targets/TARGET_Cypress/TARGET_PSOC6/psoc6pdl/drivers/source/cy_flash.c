@@ -1,13 +1,13 @@
 /***************************************************************************//**
 * \file cy_flash.c
-* \version 3.30.2
+* \version 3.30.4
 *
 * \brief
 * Provides the public functions for the API for the PSoC 6 Flash Driver.
 *
 ********************************************************************************
 * \copyright
-* Copyright 2016-2019 Cypress Semiconductor Corporation
+* Copyright 2016-2020 Cypress Semiconductor Corporation
 * SPDX-License-Identifier: Apache-2.0
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
@@ -143,9 +143,7 @@ typedef cy_en_flashdrv_status_t (*Cy_Flash_Proxy)(cy_stc_flash_context_t *contex
     /* The default delay time value */
     #define CY_FLASH_DEFAULT_DELAY                     (150UL)
     /* Calculates the time in microseconds to wait for the number of the CM0P ticks */
-    #define CY_FLASH_DELAY_CORRECTIVE(ticks)           ((((uint32)Cy_SysClk_ClkPeriGetDivider() + 1UL) * \
-                                                       (Cy_SysClk_ClkSlowGetDivider() + 1UL) * (ticks) * 1000UL)\
-                                                       / ((uint32_t)cy_Hfclk0FreqHz / 1000UL))
+    #define CY_FLASH_DELAY_CORRECTIVE(ticks)           (((ticks) * 1000UL) / (Cy_SysClk_ClkSlowGetFrequency() / 1000UL))
 
     /* Number of the CM0P ticks for StartProgram function delay corrective time */
     #define CY_FLASH_START_PROGRAM_DELAY_TICKS         (6000UL)
@@ -670,8 +668,9 @@ cy_en_flashdrv_status_t Cy_Flash_EraseRow(uint32_t rowAddr)
 * XRES pin, a software reset, and watchdog reset sources. Also, the low-voltage
 * detect circuits should be configured to generate an interrupt instead of a reset.
 * Otherwise, portions of flash may undergo unexpected changes.
-* \note Before reading data from previously programmed/erased flash rows, the
-* user must clear the flash cache with the Cy_SysLib_ClearFlashCacheAndBuffer()
+* \note To avoid situation of reading data from cache memory - before 
+* reading data from previously programmed/erased flash rows, the user must 
+* clear the flash cache with the Cy_SysLib_ClearFlashCacheAndBuffer()
 * function.
 *
 * \param rowAddr Address of the flash row number. 
@@ -721,7 +720,7 @@ cy_en_flashdrv_status_t Cy_Flash_StartEraseRow(uint32_t rowAddr)
 * Function Name: Cy_Flash_EraseSector
 ****************************************************************************//**
 *
-* This function erases a 256KB sector of flash. Reports success or
+* This function erases a sector of flash. Reports success or
 * a reason for failure. Does not return until the Erase operation is
 * complete. Returns immediately and reports a \ref CY_FLASH_DRV_IPC_BUSY error in
 * the case when another process is writing to flash or erasing the row.
@@ -774,7 +773,7 @@ cy_en_flashdrv_status_t Cy_Flash_EraseSector(uint32_t sectorAddr)
 * Function Name: Cy_Flash_StartEraseSector
 ****************************************************************************//**
 *
-* Starts erasing a 256KB sector of flash. Returns immediately
+* Starts erasing a sector of flash. Returns immediately
 * and reports a successful start or reason for failure.
 * Reports a \ref CY_FLASH_DRV_IPC_BUSY error in the case when IPC structure is locked
 * by another process. User firmware should not enter the Hibernate or Deep Sleep mode until

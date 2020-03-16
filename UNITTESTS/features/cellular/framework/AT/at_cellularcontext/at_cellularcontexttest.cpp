@@ -44,7 +44,6 @@ protected:
         ATHandler_stub::nsapi_error_value = 0;
         ATHandler_stub::nsapi_error_ok_counter = 0;
         ATHandler_stub::int_value = -1;
-        ATHandler_stub::ref_count = 0;
         ATHandler_stub::timeout = 0;
         ATHandler_stub::default_timeout = 0;
         ATHandler_stub::debug_on = 0;
@@ -77,17 +76,9 @@ protected:
 class my_stack : public AT_CellularStack {
 public:
     my_stack(ATHandler &atHandler, AT_CellularDevice &device) : AT_CellularStack(atHandler, 1, IPV4_STACK, device) {}
-    virtual int get_max_socket_count()
-    {
-        return 1;
-    }
     virtual int get_max_packet_size()
     {
         return 200;
-    }
-    virtual bool is_protocol_supported(nsapi_protocol_t protocol)
-    {
-        return true;
     }
     virtual nsapi_error_t socket_close_impl(int sock_id)
     {
@@ -520,21 +511,6 @@ TEST_F(TestAT_CellularContext, get_apn_backoff_timer)
     cn.set_credentials("internet", NULL, NULL);
     ASSERT_EQ(NSAPI_ERROR_OK, cn.get_apn_backoff_timer(time));
     ASSERT_EQ(time, 55);
-}
-
-TEST_F(TestAT_CellularContext, set_file_handle)
-{
-    EventQueue que;
-    FileHandle_stub fh1;
-    ATHandler at(&fh1, que, 0, ",");
-    AT_CellularDevice dev(&fh1);
-    AT_CellularContext ctx(at, &dev);
-    ctx.set_file_handle(&fh1);
-
-    UARTSerial ss(NC, NC);
-
-    ctx.set_file_handle(&ss, PTC0, true);
-    ctx.enable_hup(true);
 }
 
 TEST_F(TestAT_CellularContext, connect_disconnect_sync)

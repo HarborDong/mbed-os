@@ -1,5 +1,6 @@
 /* ESP8266 implementation of NetworkInterfaceAPI
  * Copyright (c) 2015 ARM Limited
+ * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -54,6 +55,8 @@
 
 #define ESP8266_WIFI_IF_NAME "es0"
 
+#define LOCAL_ADDR "127.0.0.1"
+
 using namespace mbed;
 using namespace rtos;
 
@@ -71,7 +74,7 @@ ESP8266Interface::ESP8266Interface()
       _connect_retval(NSAPI_ERROR_OK),
       _disconnect_retval(NSAPI_ERROR_OK),
       _conn_stat(NSAPI_STATUS_DISCONNECTED),
-      _conn_stat_cb(NULL),
+      _conn_stat_cb(),
       _global_event_queue(mbed_event_queue()), // Needs to be set before attaching event() to SIGIO
       _oob_event_id(0),
       _connect_event_id(0),
@@ -113,7 +116,7 @@ ESP8266Interface::ESP8266Interface(PinName tx, PinName rx, bool debug, PinName r
       _connect_retval(NSAPI_ERROR_OK),
       _disconnect_retval(NSAPI_ERROR_OK),
       _conn_stat(NSAPI_STATUS_DISCONNECTED),
-      _conn_stat_cb(NULL),
+      _conn_stat_cb(),
       _global_event_queue(mbed_event_queue()), // Needs to be set before attaching event() to SIGIO
       _oob_event_id(0),
       _connect_event_id(0),
@@ -505,22 +508,6 @@ int ESP8266Interface::disconnect()
     }
 }
 
-const char *ESP8266Interface::get_ip_address()
-{
-    if (_software_conn_stat == IFACE_STATUS_DISCONNECTED) {
-        _esp.uart_enable_input(true);
-    }
-
-    const char *ip_buff = _esp.ip_addr();
-    if (!ip_buff || strcmp(ip_buff, "0.0.0.0") == 0) {
-        ip_buff = NULL;
-    }
-    if (_software_conn_stat == IFACE_STATUS_DISCONNECTED) {
-        _esp.uart_enable_input(false);
-    }
-    return ip_buff;
-}
-
 nsapi_error_t ESP8266Interface::get_ip_address(SocketAddress *address)
 {
     if (_software_conn_stat == IFACE_STATUS_DISCONNECTED) {
@@ -637,10 +624,10 @@ int ESP8266Interface::scan(WiFiAccessPoint *res, unsigned count, scan_mode mode,
 
     nsapi_error_t status = _init();
     if (status != NSAPI_ERROR_OK) {
-        return status;
         if (_software_conn_stat == IFACE_STATUS_DISCONNECTED) {
             _esp.uart_enable_input(false);
         }
+        return status;
     }
 
     int ret = _esp.scan(res, count, (mode == SCANMODE_ACTIVE ? ESP8266::SCANMODE_ACTIVE : ESP8266::SCANMODE_PASSIVE),
@@ -651,6 +638,28 @@ int ESP8266Interface::scan(WiFiAccessPoint *res, unsigned count, scan_mode mode,
     }
     return ret;
 }
+
+#if MBED_CONF_ESP8266_BUILT_IN_DNS
+nsapi_error_t ESP8266Interface::gethostbyname(const char *name, SocketAddress *address, nsapi_version_t version, const char *interface_name)
+{
+    char ip[NSAPI_IPv4_SIZE];
+    memset(ip, 0, NSAPI_IPv4_SIZE);
+    if (!_esp.dns_lookup(name, ip)) {
+        return NSAPI_ERROR_DNS_FAILURE;
+    }
+    if (!address->set_ip_address(ip)) {
+        return NSAPI_ERROR_DNS_FAILURE;
+    }
+
+    return NSAPI_ERROR_OK;
+}
+
+
+nsapi_error_t ESP8266Interface::add_dns_server(const SocketAddress &address, const char *interface_name)
+{
+    return NSAPI_ERROR_OK;
+}
+#endif
 
 bool ESP8266Interface::_get_firmware_ok()
 {
@@ -728,14 +737,6 @@ nsapi_error_t ESP8266Interface::_reset()
     return _esp.at_available() ? NSAPI_ERROR_OK : NSAPI_ERROR_DEVICE_ERROR;
 }
 
-struct esp8266_socket {
-    int id;
-    nsapi_protocol_t proto;
-    bool connected;
-    SocketAddress addr;
-    int keepalive; // TCP
-};
-
 int ESP8266Interface::socket_open(void **handle, nsapi_protocol_t proto)
 {
     // Look for an unused socket
@@ -761,6 +762,7 @@ int ESP8266Interface::socket_open(void **handle, nsapi_protocol_t proto)
     socket->id = id;
     socket->proto = proto;
     socket->connected = false;
+    socket->bound = false;
     socket->keepalive = 0;
     *handle = socket;
     return 0;
@@ -779,11 +781,16 @@ int ESP8266Interface::socket_close(void *handle)
         err = NSAPI_ERROR_DEVICE_ERROR;
     }
 
+    if (socket->bound && !_esp.close(socket->id)) {
+        err = NSAPI_ERROR_DEVICE_ERROR;
+    }
+
     _cbs[socket->id].callback = NULL;
     _cbs[socket->id].data = NULL;
     core_util_atomic_store_u8(&_cbs[socket->id].deferred, false);
 
     socket->connected = false;
+    socket->bound = false;
     _sock_i[socket->id].open = false;
     _sock_i[socket->id].sport = 0;
     delete socket;
@@ -806,12 +813,17 @@ int ESP8266Interface::socket_bind(void *handle, const SocketAddress &address)
         for (int id = 0; id < ESP8266_SOCKET_COUNT; id++) {
             if (_sock_i[id].sport == address.get_port() && id != socket->id) { // Port already reserved by another socket
                 return NSAPI_ERROR_PARAMETER;
-            } else if (id == socket->id && socket->connected) {
+            } else if (id == socket->id && (socket->connected || socket->bound)) {
                 return NSAPI_ERROR_PARAMETER;
             }
         }
         _sock_i[socket->id].sport = address.get_port();
-        return 0;
+
+        int ret = _esp.open_udp(socket->id, LOCAL_ADDR, address.get_port(), _sock_i[socket->id].sport, 2);
+
+        socket->bound = (ret == NSAPI_ERROR_OK) ? true : false;
+
+        return ret;
     }
 
     return NSAPI_ERROR_UNSUPPORTED;
@@ -832,7 +844,7 @@ int ESP8266Interface::socket_connect(void *handle, const SocketAddress &addr)
     }
 
     if (socket->proto == NSAPI_UDP) {
-        ret = _esp.open_udp(socket->id, addr.get_ip_address(), addr.get_port(), _sock_i[socket->id].sport);
+        ret = _esp.open_udp(socket->id, addr.get_ip_address(), addr.get_port(), _sock_i[socket->id].sport, 0);
     } else {
         ret = _esp.open_tcp(socket->id, addr.get_ip_address(), addr.get_port(), socket->keepalive);
     }
@@ -849,7 +861,7 @@ int ESP8266Interface::socket_accept(void *server, void **socket, SocketAddress *
 
 int ESP8266Interface::socket_send(void *handle, const void *data, unsigned size)
 {
-    nsapi_error_t status;
+    nsapi_size_or_error_t status;
     struct esp8266_socket *socket = (struct esp8266_socket *)handle;
     uint8_t expect_false = false;
 
@@ -881,7 +893,7 @@ int ESP8266Interface::socket_send(void *handle, const void *data, unsigned size)
         status = NSAPI_ERROR_DEVICE_ERROR;
     }
 
-    return status != NSAPI_ERROR_OK ? status : size;
+    return status;
 }
 
 int ESP8266Interface::socket_recv(void *handle, void *data, unsigned size)
@@ -903,7 +915,7 @@ int ESP8266Interface::socket_recv(void *handle, void *data, unsigned size)
             socket->connected = false;
         }
     } else {
-        recv = _esp.recv_udp(socket->id, data, size);
+        recv = _esp.recv_udp(socket, data, size);
     }
 
     return recv;
@@ -928,11 +940,15 @@ int ESP8266Interface::socket_sendto(void *handle, const SocketAddress &addr, con
         socket->connected = false;
     }
 
-    if (!socket->connected) {
+    if (!socket->connected && !socket->bound) {
         int err = socket_connect(socket, addr);
         if (err < 0) {
             return err;
         }
+        socket->addr = addr;
+    }
+
+    if (socket->bound) {
         socket->addr = addr;
     }
 

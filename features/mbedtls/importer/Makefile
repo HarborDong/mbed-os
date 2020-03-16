@@ -27,8 +27,8 @@
 #
 
 # Set the mbed TLS release to import (this can/should be edited before import)
-MBED_TLS_RELEASE ?= mbedtls-2.20.0d0
-MBED_TLS_REPO_URL ?= git@github.com:ARMmbed/mbedtls-restricted.git
+MBED_TLS_RELEASE ?= mbedtls-2.20.0d1
+MBED_TLS_REPO_URL ?= git@github.com:ARMmbed/mbedtls.git
 
 # Translate between mbed TLS namespace and mbed namespace
 TARGET_PREFIX:=../
@@ -60,7 +60,6 @@ rsync:
 	#
 	# Copying licenses
 	cp $(MBED_TLS_DIR)/LICENSE $(TARGET_PREFIX)
-	cp $(MBED_TLS_DIR)/apache-2.0.txt $(TARGET_PREFIX)
 	#
 
 deploy: rsync
@@ -106,7 +105,6 @@ $(MBED_TLS_GIT_CFG):
 
 clean:
 	rm -f $(TARGET_PREFIX)LICENSE
-	rm -f $(TARGET_PREFIX)apache-2.0.txt
 	rm -f $(TARGET_PREFIX)VERSION.txt
 	rm -f $(TARGET_PREFIX)AUTHORS.txt
 	rm -rf $(TARGET_SRC)

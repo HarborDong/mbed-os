@@ -1,5 +1,6 @@
 /* mbed Microcontroller Library
  * Copyright (c) 2018 ARM Limited
+ * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,9 +14,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#if !defined(MBED_CONF_RTOS_PRESENT)
-#error [NOT_SUPPORTED] crash_reporting test cases require a RTOS to run.
-#else
 #include "mbed.h"
 #include "mbed_error.h"
 #include "mbed_crash_data_offsets.h"
@@ -83,4 +81,3 @@ int main(void)
 }
 
 #endif // !MBED_CONF_PLATFORM_CRASH_CAPTURE_ENABLED
-#endif // !defined(MBED_CONF_RTOS_PRESENT)

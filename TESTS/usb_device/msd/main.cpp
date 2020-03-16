@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, Arm Limited and affiliates.
+ * Copyright (c) 2019-2020, Arm Limited and affiliates.
  * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,6 +14,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+#if !USB_DEVICE_TESTS
+#error [NOT_SUPPORTED] usb device tests not enabled
+#else
 
 #if !defined(MBED_CONF_RTOS_PRESENT)
 #error [NOT_SUPPORTED] USB stack and test cases require RTOS to run.
@@ -33,8 +37,8 @@
 #include "HeapBlockDevice.h"
 #include "FATFileSystem.h"
 
-
-#if !defined(DEVICE_USBDEVICE) || !DEVICE_USBDEVICE
+// TARGET_NANO100 SRAM 16KB can't afford mass-storage-disk test, so skip usb_msd_test.
+#if !defined(DEVICE_USBDEVICE) || !DEVICE_USBDEVICE || TARGET_NANO100
 #error [NOT_SUPPORTED] USB Device not supported for this target
 #else
 
@@ -488,3 +492,4 @@ int main()
 
 #endif // !defined(DEVICE_USBDEVICE) || !DEVICE_USBDEVICE
 #endif // !defined(MBED_CONF_RTOS_PRESENT)
+#endif // !defined(USB_DEVICE_TESTS)

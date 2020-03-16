@@ -1,5 +1,6 @@
 /* ESP8266 implementation of NetworkInterfaceAPI
  * Copyright (c) 2015 ARM Limited
+ * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -141,9 +142,6 @@ public:
      */
     virtual nsapi_error_t get_ip_address(SocketAddress *address);
 
-    MBED_DEPRECATED_SINCE("mbed-os-5.15", "String-based APIs are deprecated")
-    virtual const char *get_ip_address();
-
     /** Get the internally stored MAC address
      *  @return             MAC address of the interface
      */
@@ -228,14 +226,25 @@ public:
      *                  version is chosen by the stack (defaults to NSAPI_UNSPEC)
      *  @return         0 on success, negative error code on failure
      */
+#if MBED_CONF_ESP8266_BUILT_IN_DNS
+    nsapi_error_t gethostbyname(const char *name, SocketAddress *address, nsapi_version_t version, const char *interface_name);
+#else
     using NetworkInterface::gethostbyname;
+#endif
+
+    using NetworkInterface::gethostbyname_async;
+    using NetworkInterface::gethostbyname_async_cancel;
 
     /** Add a domain name server to list of servers to query
      *
      *  @param addr     Destination for the host address
      *  @return         0 on success, negative error code on failure
      */
+#if MBED_CONF_ESP8266_BUILT_IN_DNS
+    nsapi_error_t add_dns_server(const SocketAddress &address, const char *interface_name);
+#else
     using NetworkInterface::add_dns_server;
+#endif
 
     /** @copydoc NetworkStack::setsockopt
      */

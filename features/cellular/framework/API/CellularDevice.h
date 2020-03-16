@@ -21,9 +21,11 @@
 #include "CellularStateMachine.h"
 #include "Callback.h"
 #include "ATHandler.h"
-#if (DEVICE_SERIAL && DEVICE_INTERRUPTIN) || defined(DOXYGEN_ONLY)
-#include "UARTSerial.h"
-#endif // #if DEVICE_SERIAL
+#include "PinNames.h"
+
+#ifdef MBED_CONF_RTOS_PRESENT
+#include "Thread.h"
+#endif // MBED_CONF_RTOS_PRESENT
 
 /** @file CellularDevice.h
  * @brief Class CellularDevice
@@ -35,7 +37,6 @@ class CellularSMS;
 class CellularInformation;
 class CellularNetwork;
 class CellularContext;
-class FileHandle;
 
 const int MAX_PIN_SIZE = 8;
 const int MAX_PLMN_SIZE = 16;
@@ -81,28 +82,14 @@ public:
     static CellularDevice *get_target_default_instance();
 
     /** Default constructor
-     *
-     *  @param fh   File handle used in communication with the modem.
      */
-    CellularDevice(FileHandle *fh);
+    CellularDevice();
 
     /** virtual Destructor
      */
     virtual ~CellularDevice();
 
 public: //Virtual functions
-
-    /** Clear modem to a default initial state
-     *
-     *  Clear persistent user data from the modem, such as PDP contexts.
-     *
-     *  @pre All open network services on modem, such as contexts and sockets, must be closed.
-     *  @post Modem power off/on may be needed to clear modem's runtime state.
-     *  @remark CellularStateMachine calls this on connect when `cellular.clear-on-connect: true`.
-     *
-     *  @return         NSAPI_ERROR_OK on success, otherwise modem may be need power cycling
-     */
-    virtual nsapi_error_t clear();
 
     /** Shutdown cellular device to minimum functionality.
      *
@@ -115,12 +102,6 @@ public: //Virtual functions
      *                  NSAPI_ERROR_DEVICE_ERROR on failure
      */
     virtual nsapi_error_t shutdown();
-
-    /** Get the linked list of CellularContext instances
-     *
-     *  @return Pointer to first item in linked list
-     */
-    virtual CellularContext *get_context_list() const;
 
     /** Get event queue that can be chained to main event queue.
      *  @return event queue
@@ -136,6 +117,25 @@ protected: //Virtual functions
     virtual void cellular_callback(nsapi_event_t ev, intptr_t ptr, CellularContext *ctx = NULL);
 
 public: //Pure virtual functions
+
+    /** Clear modem to a default initial state
+     *
+     *  Clear persistent user data from the modem, such as PDP contexts.
+     *
+     *  @pre All open network services on modem, such as contexts and sockets, must be closed.
+     *  @post Modem power off/on may be needed to clear modem's runtime state.
+     *  @remark CellularStateMachine calls this on connect when `cellular.clear-on-connect: true`.
+     *
+     *  @return         NSAPI_ERROR_OK on success, otherwise modem may be need power cycling
+     */
+    virtual nsapi_error_t clear() = 0;
+
+
+    /** Get the linked list of CellularContext instances
+     *
+     *  @return Pointer to first item in linked list
+     */
+    virtual CellularContext *get_context_list() const = 0;
 
     /** Sets the modem up for powering on
      *  This is equivalent to plugging in the device, i.e., attaching power and serial port.
@@ -227,26 +227,7 @@ public: //Pure virtual functions
      *  @return         new instance of class CellularContext or NULL in case of failure
      *
      */
-    virtual CellularContext *create_context(FileHandle *fh = NULL, const char *apn = NULL, bool cp_req = false, bool nonip_req = false) = 0;
-
-#if (DEVICE_SERIAL && DEVICE_INTERRUPTIN) || defined(DOXYGEN_ONLY)
-    /** Creates a new CellularContext interface. This API should be used if serial is UART and PPP mode used.
-     *  CellularContext created will use data carrier detect to be able to detect disconnection much faster in PPP mode.
-     *  UARTSerial usually is the same which was given for the CellularDevice.
-     *
-     *  @param serial       UARTSerial used in communication to modem. If null then the default file handle is used.
-     *  @param apn          access point to use with context, can be null.
-     *  @param dcd_pin      Pin used to set data carrier detect on/off for the given UART
-     *  @param active_high  a boolean set to true if DCD polarity is active low
-     *  @param cp_req       Flag indicating if EPS control plane optimization is required
-     *  @param nonip_req    Flag indicating if this context is required to be Non-IP
-     *
-     *  @return         new instance of class CellularContext or NULL in case of failure
-     *
-     */
-    virtual CellularContext *create_context(UARTSerial *serial, const char *apn, PinName dcd_pin = NC,
-                                            bool active_high = false, bool cp_req = false, bool nonip_req = false) = 0;
-#endif // #if DEVICE_SERIAL
+    virtual CellularContext *create_context(const char *apn = NULL, bool cp_req = false, bool nonip_req = false) = 0;
 
     /** Deletes the given CellularContext instance
      *
@@ -302,18 +283,10 @@ public: //Pure virtual functions
     virtual nsapi_error_t set_power_save_mode(int periodic_time, int active_time = 0) = 0;
 
     /** Get the current ATHandler instance in use for debug purposes etc.
-     *  Once use has been finished call to release_at_handler() has to be made
      *
-     *  @return Pointer to the ATHandler in use
+     *  @return Pointer to the ATHandler in use, NULL if device is non-AT -device.
      */
     virtual ATHandler *get_at_handler() = 0;
-
-    /** Release the ATHandler taken into use with get_at_handler()
-     *
-     *  @param at_handler
-     *  @return NSAPI_ERROR_OK on success, NSAPI_ERROR_PARAMETER on failure
-     */
-    virtual nsapi_error_t release_at_handler(ATHandler *at_handler) = 0;
 
     /** Sets cellular modem to given baud rate
      *
@@ -328,7 +301,7 @@ public: //Pure virtual functions
      *               file handle is used.
      *  @return      New instance of interface CellularNetwork.
      */
-    virtual CellularNetwork *open_network(FileHandle *fh = NULL) = 0;
+    virtual CellularNetwork *open_network() = 0;
 
 #if MBED_CONF_CELLULAR_USE_SMS || defined(DOXYGEN_ONLY)
     /** Create new CellularSMS interface.
@@ -337,7 +310,7 @@ public: //Pure virtual functions
      *               file handle is used.
      *  @return      New instance of interface CellularSMS.
      */
-    virtual CellularSMS *open_sms(FileHandle *fh = NULL) = 0;
+    virtual CellularSMS *open_sms() = 0;
 
     /** Closes the opened CellularSMS by deleting the CellularSMS instance.
      */
@@ -351,7 +324,7 @@ public: //Pure virtual functions
      *               file handle is used.
      *  @return      New instance of interface CellularInformation.
      */
-    virtual CellularInformation *open_information(FileHandle *fh = NULL) = 0;
+    virtual CellularInformation *open_information() = 0;
 
     /** Closes the opened CellularNetwork by deleting the CellularNetwork instance.
      */
@@ -372,17 +345,6 @@ public: //Pure virtual functions
 
 public: //Common functions
 
-    /** Stop the current operation. Operations: set_device_ready, set_sim_ready, register_to_network, attach_to_network
-     *
-     */
-    MBED_DEPRECATED_SINCE("mbed-os-5.15", "Use CellularDevice::shutdown() instead.")
-    void stop();
-
-    /** Get the current FileHandle item used when communicating with the modem.
-     *
-     *  @return reference to FileHandle
-     */
-    FileHandle &get_file_handle() const;
 
     /** Set the pin code for SIM card
      *
@@ -485,9 +447,7 @@ protected: //Common functions
 
 private: //Common functions
     nsapi_error_t start_state_machine(CellularStateMachine::CellularState target_state);
-
     nsapi_error_t create_state_machine();
-
     void stm_callback(nsapi_event_t ev, intptr_t ptr);
 
 protected: //Member variables
@@ -496,18 +456,19 @@ protected: //Member variables
     int _sms_ref_count;
 #endif // MBED_CONF_CELLULAR_USE_SMS
     int _info_ref_count;
-    FileHandle *_fh;
     events::EventQueue _queue;
     CellularStateMachine *_state_machine;
+    Callback<void(nsapi_event_t, intptr_t)> _status_cb;
 
 private: //Member variables
     CellularNetwork *_nw;
     char _sim_pin[MAX_PIN_SIZE + 1];
     char _plmn[MAX_PLMN_SIZE + 1];
     PlatformMutex _mutex;
-    Callback<void(nsapi_event_t, intptr_t)> _status_cb;
 
-    const intptr_t *_property_array;
+#ifdef MBED_CONF_RTOS_PRESENT
+    rtos::Thread _queue_thread;
+#endif
 };
 
 /**
